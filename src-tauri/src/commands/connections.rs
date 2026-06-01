@@ -1,0 +1,296 @@
+use crate::db::models::{Connection, ConnectionInput, Group};
+use crate::db::DbConn;
+use crate::crypto::{encrypt_password, get_master_password};
+use tauri::State;
+use uuid::Uuid;
+
+// Response type that excludes sensitive fields
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct ConnectionResponse {
+    pub id: String,
+    pub group_id: Option<String>,
+    pub name: String,
+    pub host: String,
+    pub port: i32,
+    pub auth_type: String,
+    pub username: Option<String>,
+    pub has_password: bool,
+    pub key_path: Option<String>,
+    pub proxy_type: Option<String>,
+    pub proxy_host: Option<String>,
+    pub proxy_port: Option<i32>,
+    pub proxy_jump_id: Option<String>,
+    pub init_command: Option<String>,
+    pub init_path: Option<String>,
+    pub timeout_ms: Option<i32>,
+    pub heartbeat_ms: Option<i32>,
+    pub remark: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+fn to_response(conn: &Connection) -> ConnectionResponse {
+    ConnectionResponse {
+        id: conn.id.clone(),
+        group_id: conn.group_id.clone(),
+        name: conn.name.clone(),
+        host: conn.host.clone(),
+        port: conn.port,
+        auth_type: conn.auth_type.clone(),
+        username: conn.username.clone(),
+        has_password: conn.password_enc.is_some() && !conn.password_enc.as_deref().unwrap_or("").is_empty(),
+        key_path: conn.key_path.clone(),
+        proxy_type: conn.proxy_type.clone(),
+        proxy_host: conn.proxy_host.clone(),
+        proxy_port: conn.proxy_port,
+        proxy_jump_id: conn.proxy_jump_id.clone(),
+        init_command: conn.init_command.clone(),
+        init_path: conn.init_path.clone(),
+        timeout_ms: conn.timeout_ms,
+        heartbeat_ms: conn.heartbeat_ms,
+        remark: conn.remark.clone(),
+        created_at: conn.created_at.clone(),
+        updated_at: conn.updated_at.clone(),
+    }
+}
+
+fn query_connection(conn_guard: &rusqlite::Connection, id: &str) -> Result<Connection, String> {
+    let mut stmt = conn_guard
+        .prepare("SELECT id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark, created_at, updated_at FROM connections WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+    stmt.query_row(rusqlite::params![id], |row| {
+        Ok(Connection {
+            id: row.get(0)?,
+            group_id: row.get(1)?,
+            name: row.get(2)?,
+            host: row.get(3)?,
+            port: row.get(4)?,
+            auth_type: row.get(5)?,
+            username: row.get(6)?,
+            password_enc: row.get(7)?,
+            key_path: row.get(8)?,
+            credential_id: row.get(9)?,
+            proxy_type: row.get(10)?,
+            proxy_host: row.get(11)?,
+            proxy_port: row.get(12)?,
+            proxy_jump_id: row.get(13)?,
+            init_command: row.get(14)?,
+            init_path: row.get(15)?,
+            timeout_ms: row.get(16)?,
+            heartbeat_ms: row.get(17)?,
+            remark: row.get(18)?,
+            created_at: row.get(19)?,
+            updated_at: row.get(20)?,
+        })
+    }).map_err(|e| format!("Connection not found: {}", e))
+}
+
+fn query_connections(conn_guard: &rusqlite::Connection, sql: &str, params: &[&dyn rusqlite::types::ToSql]) -> Result<Vec<ConnectionResponse>, String> {
+    let mut stmt = conn_guard.prepare(sql).map_err(|e| e.to_string())?;
+    let rows = stmt.query_map(params, |row| {
+        Ok(Connection {
+            id: row.get(0)?,
+            group_id: row.get(1)?,
+            name: row.get(2)?,
+            host: row.get(3)?,
+            port: row.get(4)?,
+            auth_type: row.get(5)?,
+            username: row.get(6)?,
+            password_enc: row.get(7)?,
+            key_path: row.get(8)?,
+            credential_id: row.get(9)?,
+            proxy_type: row.get(10)?,
+            proxy_host: row.get(11)?,
+            proxy_port: row.get(12)?,
+            proxy_jump_id: row.get(13)?,
+            init_command: row.get(14)?,
+            init_path: row.get(15)?,
+            timeout_ms: row.get(16)?,
+            heartbeat_ms: row.get(17)?,
+            remark: row.get(18)?,
+            created_at: row.get(19)?,
+            updated_at: row.get(20)?,
+        })
+    }).map_err(|e| e.to_string())?;
+
+    let mut result = Vec::new();
+    for row in rows {
+        if let Ok(conn) = row {
+            result.push(to_response(&conn));
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn get_groups(db: State<'_, DbConn>) -> Result<Vec<Group>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT id, name, parent_id, icon, sort_order, created_at FROM groups ORDER BY sort_order")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Group {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                parent_id: row.get(2)?,
+                icon: row.get(3)?,
+                sort_order: row.get(4)?,
+                created_at: row.get(5)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_group(db: State<'_, DbConn>, name: String, parent_id: Option<String>, icon: Option<String>) -> Result<Group, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let id = Uuid::new_v4().to_string();
+    let max_order: i32 = conn
+        .query_row("SELECT COALESCE(MAX(sort_order), 0) FROM groups", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    conn.execute(
+        "INSERT INTO groups (id, name, parent_id, icon, sort_order) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![id, name, parent_id, icon, max_order + 1],
+    )
+    .map_err(|e| e.to_string())?;
+
+    Ok(Group {
+        id,
+        name,
+        parent_id,
+        icon,
+        sort_order: max_order + 1,
+        created_at: None,
+    })
+}
+
+#[tauri::command]
+pub fn update_group(db: State<'_, DbConn>, id: String, name: String, icon: Option<String>) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE groups SET name = ?1, icon = ?2 WHERE id = ?3",
+        rusqlite::params![name, icon, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_group(db: State<'_, DbConn>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM groups WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_connections(db: State<'_, DbConn>) -> Result<Vec<ConnectionResponse>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    query_connections(&conn, "SELECT id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark, created_at, updated_at FROM connections ORDER BY name", &[])
+}
+
+#[tauri::command]
+pub fn create_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Result<ConnectionResponse, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
+    let port = input.port.unwrap_or(22);
+    let auth_type = input.auth_type.unwrap_or_else(|| "password".to_string());
+
+    // Encrypt password before storing
+    let encrypted_password = if let Some(ref pwd) = input.password {
+        if !pwd.is_empty() {
+            let master = get_master_password();
+            Some(encrypt_password(pwd, &master))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    conn.execute(
+        "INSERT INTO connections (id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
+        rusqlite::params![
+            id, input.group_id, input.name, input.host, port, auth_type,
+            input.username, encrypted_password, input.key_path, input.credential_id,
+            input.proxy_type, input.proxy_host, input.proxy_port, input.proxy_jump_id,
+            input.init_command, input.init_path, input.timeout_ms,
+            input.heartbeat_ms.unwrap_or(5000), input.remark
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let connection = query_connection(&conn, &id)?;
+    Ok(to_response(&connection))
+}
+
+#[tauri::command]
+pub fn update_connection(db: State<'_, DbConn>, id: String, input: ConnectionInput) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+
+    // Encrypt password if provided
+    let encrypted_password = if let Some(ref pwd) = input.password {
+        if !pwd.is_empty() {
+            let master = get_master_password();
+            Some(encrypt_password(pwd, &master))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    conn.execute(
+        "UPDATE connections SET group_id=?1, name=?2, host=?3, port=?4, auth_type=?5, username=?6, password_enc=?7, key_path=?8, credential_id=?9, proxy_type=?10, proxy_host=?11, proxy_port=?12, proxy_jump_id=?13, init_command=?14, init_path=?15, timeout_ms=?16, heartbeat_ms=?17, remark=?18, updated_at=CURRENT_TIMESTAMP WHERE id=?19",
+        rusqlite::params![
+            input.group_id, input.name, input.host,
+            input.port.unwrap_or(22),
+            input.auth_type.unwrap_or_else(|| "password".to_string()),
+            input.username, encrypted_password, input.key_path, input.credential_id,
+            input.proxy_type, input.proxy_host, input.proxy_port, input.proxy_jump_id,
+            input.init_command, input.init_path, input.timeout_ms,
+            input.heartbeat_ms.unwrap_or(5000), input.remark, id
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_connection(db: State<'_, DbConn>, id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM connections WHERE id = ?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
+    use crate::ssh::connection::{connect, SshConnectParams};
+    let params = SshConnectParams {
+        host: input.host,
+        port: input.port.unwrap_or(22) as u16,
+        username: input.username.unwrap_or_else(|| "root".to_string()),
+        auth_type: input.auth_type.unwrap_or_else(|| "password".to_string()),
+        password: input.password,
+        key_path: input.key_path,
+        timeout_ms: input.timeout_ms.map(|t| t as u32),
+        proxy_jump_id: None,
+        init_command: None,
+        init_path: None,
+        heartbeat_ms: None,
+    };
+    connect(&params)?;
+    Ok("Connection successful".to_string())
+}
+
+#[tauri::command]
+pub fn search_connections(db: State<'_, DbConn>, query: String) -> Result<Vec<ConnectionResponse>, String> {
+    let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let pattern = format!("%{}%", query);
+    query_connections(&conn, "SELECT id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark, created_at, updated_at FROM connections WHERE name LIKE ?1 OR host LIKE ?1 OR remark LIKE ?1 ORDER BY name", &[&pattern])
+}
