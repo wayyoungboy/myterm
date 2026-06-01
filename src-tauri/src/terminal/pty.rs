@@ -2,10 +2,9 @@ use ssh2::Session;
 use ssh2::Channel;
 
 pub fn open_shell(session: &Session) -> Result<Channel, String> {
-    // Set session to non-blocking mode for the terminal reader thread
-    // This is necessary for async I/O but affects all channels on this session
-    // The SFTP and monitor operations use separate sessions via get_session()
-    session.set_blocking(false);
+    // Keep session in blocking mode for compatibility with SFTP operations
+    // The reader thread will use blocking reads which is fine for a dedicated thread
+    session.set_blocking(true);
 
     let mut channel = session.channel_session()
         .map_err(|e| format!("Channel open failed: {}", e))?;
