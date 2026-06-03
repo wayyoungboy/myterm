@@ -130,6 +130,17 @@ pub struct MonitorData {
     pub hostname: String,
     pub os_info: String,
     pub load_avg: (f64, f64, f64),
+    pub top_cpu_processes: Vec<ProcessInfo>,
+    pub top_mem_processes: Vec<ProcessInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub cpu: f64,
+    pub memory: f64,
+    pub command: String,
+    pub args: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

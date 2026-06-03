@@ -1,6 +1,6 @@
 use ssh2::Session;
 use std::io::Read;
-use crate::db::models::{MonitorData, DiskPartition, GpuData};
+use crate::db::models::{MonitorData, DiskPartition, GpuData, ProcessInfo};
 
 const MONITOR_SCRIPT: &str = r#"#!/bin/sh
 # System monitor script - pure POSIX sh
@@ -38,10 +38,17 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 else
   echo "none"
 fi
+echo "===TOP_CPU==="
+ps -eo pid=,pcpu=,pmem=,comm=,args= --sort=-pcpu 2>/dev/null | head -n 8 || true
+echo "===TOP_MEM==="
+ps -eo pid=,pcpu=,pmem=,comm=,args= --sort=-pmem 2>/dev/null | head -n 8 || true
 echo "===END==="
 "#;
 
 pub fn fetch_monitor_data(session: &Session) -> Result<MonitorData, String> {
+    // Temporarily switch to blocking mode for synchronous read
+    session.set_blocking(true);
+
     let script = MONITOR_SCRIPT.replace("\r\n", "\n");
     let mut channel = session.channel_session()
         .map_err(|e| format!("Channel open failed: {}", e))?;
@@ -52,6 +59,9 @@ pub fn fetch_monitor_data(session: &Session) -> Result<MonitorData, String> {
     channel.read_to_string(&mut output)
         .map_err(|e| format!("Read failed: {}", e))?;
     channel.wait_close().ok();
+
+    // Restore non-blocking mode for terminal reader
+    session.set_blocking(false);
 
     parse_monitor_output(&output)
 }
@@ -148,6 +158,9 @@ fn parse_monitor_output(output: &str) -> Result<MonitorData, String> {
         None
     };
 
+    let top_cpu_processes = parse_processes(&extract_section(data, "TOP_CPU").unwrap_or_default());
+    let top_mem_processes = parse_processes(&extract_section(data, "TOP_MEM").unwrap_or_default());
+
     Ok(MonitorData {
         cpu_usage,
         cpu_cores: vec![cpu_usage; cpu_cores_count as usize],
@@ -166,15 +179,17 @@ fn parse_monitor_output(output: &str) -> Result<MonitorData, String> {
         hostname,
         os_info,
         load_avg,
+        top_cpu_processes,
+        top_mem_processes,
     })
 }
 
 fn extract_section(data: &str, section: &str) -> Option<String> {
-    let marker = format!("{}===", section);
+    let marker = format!("==={}===", section);
     let start_idx = data.find(&marker)?;
     let content_start = start_idx + marker.len();
-    let remaining = &data[content_start..];
-    let end_idx = remaining.find('\n').unwrap_or(remaining.len());
+    let remaining = data[content_start..].trim_start_matches('\n');
+    let end_idx = remaining.find("\n===").unwrap_or(remaining.len());
     Some(remaining[..end_idx].trim().to_string())
 }
 
@@ -187,4 +202,55 @@ fn extract_mem_value(mem_section: &str, key: &str) -> u64 {
                 .and_then(|s| s.parse().ok())
         })
         .unwrap_or(0)
+}
+
+fn parse_processes(section: &str) -> Vec<ProcessInfo> {
+    section
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let pid = parts.next()?.parse().ok()?;
+            let cpu = parts.next()?.parse().unwrap_or(0.0);
+            let memory = parts.next()?.parse().unwrap_or(0.0);
+            let command = parts.next().unwrap_or("").to_string();
+            let args = parts.collect::<Vec<_>>().join(" ");
+
+            Some(ProcessInfo {
+                pid,
+                cpu,
+                memory,
+                command,
+                args,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extracts_multiline_section_between_markers() {
+        let output = "===HOSTNAME===\nserver-1\n===MEMORY===\nMemTotal: 10 kB\nCached: 2 kB\n===END===";
+
+        assert_eq!(extract_section(output, "HOSTNAME").as_deref(), Some("server-1"));
+        assert_eq!(
+            extract_section(output, "MEMORY").as_deref(),
+            Some("MemTotal: 10 kB\nCached: 2 kB")
+        );
+    }
+
+    #[test]
+    fn parses_process_rows_with_args() {
+        let rows = "123 4.5 1.2 sshd sshd: wayserver [priv]\n456 0.1 3.4 java java -jar app.jar";
+        let processes = parse_processes(rows);
+
+        assert_eq!(processes.len(), 2);
+        assert_eq!(processes[0].pid, 123);
+        assert_eq!(processes[0].cpu, 4.5);
+        assert_eq!(processes[0].memory, 1.2);
+        assert_eq!(processes[0].command, "sshd");
+        assert_eq!(processes[0].args, "sshd: wayserver [priv]");
+    }
 }
