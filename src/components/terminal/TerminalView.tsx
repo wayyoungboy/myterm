@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { invoke } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
-import { createConnection } from '../../utils/tauri';
+import { connectTerminal, createConnection, disconnectTerminal, terminalResize, terminalWrite } from '../../utils/tauri';
 import type { ConnectionInput } from '../../types';
 
 import '@xterm/xterm/css/xterm.css';
@@ -111,7 +110,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
         fitAddon.current.fit();
         if (sessionId && termInstance.current) {
           const { cols, rows } = termInstance.current;
-          invoke('terminal_resize', { sessionId, cols, rows }).catch(() => {});
+          terminalResize(sessionId, cols, rows).catch(() => {});
         }
       }
     };
@@ -127,7 +126,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
         fitAddon.current.fit();
         if (sessionId && termInstance.current) {
           const { cols, rows } = termInstance.current;
-          invoke('terminal_resize', { sessionId, cols, rows }).catch(() => {});
+          terminalResize(sessionId, cols, rows).catch(() => {});
         }
       }
     });
@@ -165,13 +164,13 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
 
     // Send user input to SSH channel - track disposable for cleanup
     const disposable = term.onData((data) => {
-      invoke('terminal_write', { sessionId: sid, data }).catch(() => {});
+      terminalWrite(sid, data).catch(() => {});
     });
     onDataDisposable.current = () => disposable.dispose();
 
     // Send initial resize
     const { cols, rows } = term;
-    invoke('terminal_resize', { sessionId: sid, cols, rows }).catch(() => {});
+    terminalResize(sid, cols, rows).catch(() => {});
 
     // Focus the terminal
     term.focus();
@@ -207,9 +206,11 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
           resolvedId = created.id;
         }
 
-        const sid = await invoke<string>('connect_terminal', {
-          connectionId: resolvedId,
-        });
+        if (!resolvedId) {
+          throw new Error('Connection id is required');
+        }
+
+        const sid = await connectTerminal(resolvedId);
 
         setSessionId(sid);
 
@@ -260,7 +261,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     unlistenExit.current?.();
 
     try {
-      await invoke('disconnect_terminal', { sessionId });
+      await disconnectTerminal(sessionId);
     } catch {}
 
     setSessionId(null);

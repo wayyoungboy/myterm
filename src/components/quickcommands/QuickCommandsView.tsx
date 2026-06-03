@@ -2,13 +2,39 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import {
   getQuickCommands, createQuickCommand, updateQuickCommand, deleteQuickCommand,
+  terminalWrite,
   type QuickCommand
 } from '../../utils/tauri';
+import type { Connection } from '../../types';
 import { Plus, Trash2, Edit, Play, Terminal, Search } from 'lucide-react';
 
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+function formatDate(date: Date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function formatTime(date: Date) {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
+}
+
+function expandCommand(template: string, connection?: Connection) {
+  const now = new Date();
+  const variables: Record<string, string> = {
+    host: connection?.host ?? '',
+    port: connection?.port ? String(connection.port) : '',
+    username: connection?.username ?? '',
+    date: formatDate(now),
+    time: formatTime(now),
+  };
+
+  return template.replace(/\$\{(host|port|username|date|time)\}/g, (_, key: string) => variables[key] ?? '');
+}
+
 export function QuickCommandsView() {
-  const { tabs, activeTabId } = useAppStore();
+  const { tabs, activeTabId, connections } = useAppStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
+  const activeConnection = connections.find((conn) => conn.id === activeTab?.connectionId);
 
   const [commands, setCommands] = useState<QuickCommand[]>([]);
   const [, setLoading] = useState(false);
@@ -83,11 +109,7 @@ export function QuickCommandsView() {
       return;
     }
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('terminal_write', {
-        sessionId: activeTab.sessionId,
-        data: cmd.command + '\n',
-      });
+      await terminalWrite(activeTab.sessionId, expandCommand(cmd.command, activeConnection) + '\n');
     } catch (e) {
       setError(String(e));
     }

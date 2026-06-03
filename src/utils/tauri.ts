@@ -33,6 +33,10 @@ export const searchConnections = (query: string) =>
 // Terminal
 export const connectTerminal = (connectionId: string) =>
   invoke<string>('connect_terminal', { connectionId });
+export const terminalWrite = (sessionId: string, data: string) =>
+  invoke('terminal_write', { sessionId, data });
+export const terminalResize = (sessionId: string, cols: number, rows: number) =>
+  invoke('terminal_resize', { sessionId, cols, rows });
 export const disconnectTerminal = (sessionId: string) =>
   invoke('disconnect_terminal', { sessionId });
 
