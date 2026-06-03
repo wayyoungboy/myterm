@@ -55,6 +55,8 @@ pub fn run() {
             commands::sftp::sftp_list_dir,
             commands::sftp::sftp_read_file,
             commands::sftp::sftp_write_file,
+            commands::sftp::sftp_download_path,
+            commands::sftp::sftp_upload_path,
             commands::sftp::sftp_remove_file,
             commands::sftp::sftp_rename,
             commands::sftp::sftp_mkdir,

@@ -18,13 +18,14 @@ import {
   sftpListDir,
   sftpReadFile,
   sftpWriteFile,
+  sftpDownloadPath,
+  sftpUploadPath,
   sftpRemoveFile,
   sftpRename,
   sftpMkdir,
   sftpChmod,
   connectTerminal,
   listLocalDir,
-  readLocalFile,
   writeLocalFile,
   removeLocalFile,
   renameLocalFile,
@@ -325,11 +326,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   };
 
   const copyRemoteFilesToLocal = async (entries: SftpEntry[]) => {
-    const files = entries.filter((entry) => !entry.is_dir);
-    if (files.length === 0) {
-      alert('Only files can be downloaded to the local panel.');
-      return;
-    }
+    if (entries.length === 0) return;
     if (!sessionId) {
       alert('No SSH session available.');
       return;
@@ -338,17 +335,14 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     setCtxMenu(initialCtx);
     setTransferLoading(true);
     try {
-      for (const [index, entry] of files.entries()) {
-        setTransferMessage(`Downloading ${index + 1}/${files.length}: ${entry.name}`);
-        const data = await sftpReadFile(sessionId, entry.path);
-        await writeLocalFile(joinPath(localPath, entry.name), data);
+      let copiedFiles = 0;
+      for (const [index, entry] of entries.entries()) {
+        setTransferMessage(`Downloading ${index + 1}/${entries.length}: ${entry.name}`);
+        copiedFiles += await sftpDownloadPath(sessionId, entry.path, localPath);
       }
       await loadLocal(localPath);
       clearSelection('remote');
-      const skipped = entries.length - files.length;
-      if (skipped > 0) {
-        alert(`${skipped} directories were skipped. Directory download is not supported yet.`);
-      }
+      setTransferMessage(`Downloaded ${copiedFiles} files.`);
     } catch (e: any) {
       alert('Download failed: ' + (e?.toString?.() ?? e));
     } finally {
@@ -357,11 +351,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   };
 
   const copyLocalFilesToRemote = async (entries: SftpEntry[]) => {
-    const files = entries.filter((entry) => !entry.is_dir);
-    if (files.length === 0) {
-      alert('Only files can be uploaded to the remote panel.');
-      return;
-    }
+    if (entries.length === 0) return;
     if (!sessionId) {
       alert('No SSH session available.');
       return;
@@ -370,17 +360,14 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     setCtxMenu(initialCtx);
     setTransferLoading(true);
     try {
-      for (const [index, entry] of files.entries()) {
-        setTransferMessage(`Uploading ${index + 1}/${files.length}: ${entry.name}`);
-        const data = await readLocalFile(entry.path);
-        await sftpWriteFile(sessionId, joinPath(remotePath, entry.name), data);
+      let copiedFiles = 0;
+      for (const [index, entry] of entries.entries()) {
+        setTransferMessage(`Uploading ${index + 1}/${entries.length}: ${entry.name}`);
+        copiedFiles += await sftpUploadPath(sessionId, entry.path, remotePath);
       }
       await loadRemote(remotePath);
       clearSelection('local');
-      const skipped = entries.length - files.length;
-      if (skipped > 0) {
-        alert(`${skipped} directories were skipped. Directory upload is not supported yet.`);
-      }
+      setTransferMessage(`Uploaded ${copiedFiles} files.`);
     } catch (e: any) {
       alert('Upload failed: ' + (e?.toString?.() ?? e));
     } finally {
@@ -708,7 +695,6 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     const selection = getSelection(side);
     const currentSelectedEntries = selectedEntries(side, entries);
     const selectedCount = currentSelectedEntries.length;
-    const selectedFileCount = currentSelectedEntries.filter((entry) => !entry.is_dir).length;
     const allSelected = entries.length > 0 && selectedCount === entries.length;
 
     return (
@@ -772,8 +758,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
             {side === 'remote' ? (
               <button
                 className="btn btn-ghost p-1"
-                title="Download selected files to local panel"
-                disabled={selectedFileCount === 0 || !sessionId}
+                title="Download selected items to local panel"
+                disabled={!sessionId}
                 onClick={() => copyRemoteFilesToLocal(currentSelectedEntries)}
               >
                 <Download size={14} />
@@ -782,8 +768,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
             ) : (
               <button
                 className="btn btn-ghost p-1"
-                title="Upload selected files to remote panel"
-                disabled={selectedFileCount === 0 || !sessionId}
+                title="Upload selected items to remote panel"
+                disabled={!sessionId}
                 onClick={() => copyLocalFilesToRemote(currentSelectedEntries)}
               >
                 <Upload size={14} />

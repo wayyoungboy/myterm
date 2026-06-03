@@ -50,6 +50,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 本地读写/删除/重命名/建目录 | ✅ | `local_fs.rs` |
 | 双栏 UI | ✅ | 本地/远程面板 |
 | 上传/下载 | ✅ | 基础文件上传和下载已接入 |
+| 目录递归上传/下载 | ✅ | 选中文件夹时递归复制到对侧当前目录 |
 | 权限编辑 | ✅ | 远程文件/目录支持 octal chmod |
 | 远程文件在线编辑 | ✅ | 1 MB 内 UTF-8 文本文件支持在线编辑和保存 |
 | 拖拽上传 | ✅ | 本地/远程面板支持拖拽文件和多文件选择上传 |
@@ -113,6 +114,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - TypeScript/Vite build 通过。
 - Rust check 通过且无 warning。
-- Rust 单元测试通过，当前覆盖 16 个测试。
+- Rust 单元测试通过，当前覆盖 18 个测试。
 - 真实 SSH 测试服务器连接通过。
 - macOS arm64 `.app` 和 DMG 产物已生成；Windows MSI / Linux DEB 尚未在对应平台验证。

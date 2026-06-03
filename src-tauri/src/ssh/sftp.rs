@@ -1,5 +1,7 @@
 use crate::db::models::SftpEntry;
 use ssh2::{FileStat, Session, Sftp};
+use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 pub fn list_dir(session: &Session, path: &str) -> Result<Vec<SftpEntry>, String> {
@@ -83,6 +85,156 @@ pub fn write_file(session: &Session, path: &str, data: &[u8]) -> Result<(), Stri
     file.write_all(data)
         .map_err(|e| format!("Write failed: {}", e))?;
     Ok(())
+}
+
+pub fn download_path(
+    session: &Session,
+    remote_path: &str,
+    local_parent: &str,
+) -> Result<usize, String> {
+    let sftp = session
+        .sftp()
+        .map_err(|e| format!("SFTP init failed: {}", e))?;
+    let remote = Path::new(remote_path);
+    let root_name = source_entry_name(remote)?;
+    let local_target = Path::new(local_parent).join(root_name);
+
+    download_path_inner(&sftp, remote, &local_target)
+}
+
+fn download_path_inner(
+    sftp: &Sftp,
+    remote_path: &Path,
+    local_path: &Path,
+) -> Result<usize, String> {
+    let stat = sftp
+        .stat(remote_path)
+        .map_err(|e| format!("Remote stat failed for {}: {}", remote_path.display(), e))?;
+
+    if stat.is_dir() {
+        fs::create_dir_all(local_path).map_err(|e| {
+            format!(
+                "Create local dir failed for {}: {}",
+                local_path.display(),
+                e
+            )
+        })?;
+
+        let entries = sftp.readdir(remote_path).map_err(|e| {
+            format!(
+                "Remote read dir failed for {}: {}",
+                remote_path.display(),
+                e
+            )
+        })?;
+        let mut copied = 0;
+        for (child_path, _) in entries {
+            let name = source_entry_name(&child_path)?;
+            if name == "." || name == ".." {
+                continue;
+            }
+            let child_remote = remote_child_path(&remote_path.to_string_lossy(), &name);
+            let child_local = local_path.join(name);
+            copied += download_path_inner(sftp, Path::new(&child_remote), &child_local)?;
+        }
+        Ok(copied)
+    } else {
+        if let Some(parent) = local_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                format!("Create local parent failed for {}: {}", parent.display(), e)
+            })?;
+        }
+
+        let mut remote_file = sftp.open(remote_path).map_err(|e| {
+            format!(
+                "Open remote file failed for {}: {}",
+                remote_path.display(),
+                e
+            )
+        })?;
+        let mut local_file = fs::File::create(local_path).map_err(|e| {
+            format!(
+                "Create local file failed for {}: {}",
+                local_path.display(),
+                e
+            )
+        })?;
+        std::io::copy(&mut remote_file, &mut local_file).map_err(|e| {
+            format!(
+                "Copy remote file failed from {} to {}: {}",
+                remote_path.display(),
+                local_path.display(),
+                e
+            )
+        })?;
+        Ok(1)
+    }
+}
+
+pub fn upload_path(
+    session: &Session,
+    local_path: &str,
+    remote_parent: &str,
+) -> Result<usize, String> {
+    let sftp = session
+        .sftp()
+        .map_err(|e| format!("SFTP init failed: {}", e))?;
+    let local = Path::new(local_path);
+    let root_name = source_entry_name(local)?;
+    let remote_target = remote_child_path(remote_parent, &root_name);
+
+    upload_path_inner(&sftp, local, &remote_target)
+}
+
+fn upload_path_inner(sftp: &Sftp, local_path: &Path, remote_path: &str) -> Result<usize, String> {
+    let metadata = fs::metadata(local_path)
+        .map_err(|e| format!("Local stat failed for {}: {}", local_path.display(), e))?;
+
+    if metadata.is_dir() {
+        ensure_remote_dir(sftp, remote_path)?;
+        let mut copied = 0;
+        let entries = fs::read_dir(local_path)
+            .map_err(|e| format!("Local read dir failed for {}: {}", local_path.display(), e))?;
+        for entry in entries {
+            let entry = entry.map_err(|e| format!("Local read dir entry failed: {}", e))?;
+            let child_path = entry.path();
+            let name = source_entry_name(&child_path)?;
+            let child_remote = remote_child_path(remote_path, &name);
+            copied += upload_path_inner(sftp, &child_path, &child_remote)?;
+        }
+        Ok(copied)
+    } else {
+        let mut local_file = fs::File::open(local_path)
+            .map_err(|e| format!("Open local file failed for {}: {}", local_path.display(), e))?;
+        let mut remote_file = sftp
+            .create(Path::new(remote_path))
+            .map_err(|e| format!("Create remote file failed for {}: {}", remote_path, e))?;
+        std::io::copy(&mut local_file, &mut remote_file).map_err(|e| {
+            format!(
+                "Copy local file failed from {} to {}: {}",
+                local_path.display(),
+                remote_path,
+                e
+            )
+        })?;
+        remote_file
+            .flush()
+            .map_err(|e| format!("Flush remote file failed for {}: {}", remote_path, e))?;
+        Ok(1)
+    }
+}
+
+fn ensure_remote_dir(sftp: &Sftp, remote_path: &str) -> Result<(), String> {
+    match sftp.mkdir(Path::new(remote_path), 0o755) {
+        Ok(()) => Ok(()),
+        Err(err) => match sftp.stat(Path::new(remote_path)) {
+            Ok(stat) if stat.is_dir() => Ok(()),
+            _ => Err(format!(
+                "Create remote dir failed for {}: {}",
+                remote_path, err
+            )),
+        },
+    }
 }
 
 pub fn remove_file(session: &Session, path: &str) -> Result<(), String> {
@@ -176,6 +328,22 @@ fn parse_chmod_mode(mode: &str) -> Result<u32, String> {
     Ok(parsed & 0o7777)
 }
 
+fn remote_child_path(parent: &str, child_name: &str) -> String {
+    if parent == "/" {
+        format!("/{child_name}")
+    } else {
+        format!("{}/{}", parent.trim_end_matches('/'), child_name)
+    }
+}
+
+fn source_entry_name(path: &Path) -> Result<String, String> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(ToString::to_string)
+        .ok_or_else(|| format!("Source path has no file name: {}", path.display()))
+}
+
 #[allow(dead_code)]
 pub fn stat(session: &Session, path: &str) -> Result<ssh2::FileStat, String> {
     let sftp = session
@@ -208,5 +376,28 @@ mod tests {
         assert!(parse_chmod_mode("10000").is_err());
         assert!(parse_chmod_mode("8888").is_err());
         assert!(parse_chmod_mode("rwx").is_err());
+    }
+
+    #[test]
+    fn joins_remote_child_paths_without_duplicate_slashes() {
+        assert_eq!(remote_child_path("/", "app.log"), "/app.log");
+        assert_eq!(remote_child_path("/var/log", "app.log"), "/var/log/app.log");
+        assert_eq!(
+            remote_child_path("/var/log/", "app.log"),
+            "/var/log/app.log"
+        );
+    }
+
+    #[test]
+    fn derives_copy_root_name_from_source_path() {
+        assert_eq!(
+            source_entry_name(Path::new("/home/deploy/releases")).expect("name"),
+            "releases"
+        );
+        assert_eq!(
+            source_entry_name(Path::new("/home/deploy/app.tar.gz")).expect("name"),
+            "app.tar.gz"
+        );
+        assert!(source_entry_name(Path::new("/")).is_err());
     }
 }

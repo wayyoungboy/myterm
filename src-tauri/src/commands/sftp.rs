@@ -90,6 +90,34 @@ pub fn sftp_write_file(
 }
 
 #[tauri::command]
+pub fn sftp_download_path(
+    db: State<'_, DbConn>,
+    tm: State<'_, TerminalManager>,
+    session_id: String,
+    remote_path: String,
+    local_parent: String,
+) -> Result<usize, String> {
+    let path = format!("{remote_path} -> {local_parent}");
+    run_sftp_op(&db, &tm, &session_id, "download_path", &path, |session| {
+        crate::ssh::sftp::download_path(session, &remote_path, &local_parent)
+    })
+}
+
+#[tauri::command]
+pub fn sftp_upload_path(
+    db: State<'_, DbConn>,
+    tm: State<'_, TerminalManager>,
+    session_id: String,
+    local_path: String,
+    remote_parent: String,
+) -> Result<usize, String> {
+    let path = format!("{local_path} -> {remote_parent}");
+    run_sftp_op(&db, &tm, &session_id, "upload_path", &path, |session| {
+        crate::ssh::sftp::upload_path(session, &local_path, &remote_parent)
+    })
+}
+
+#[tauri::command]
 pub fn sftp_remove_file(
     db: State<'_, DbConn>,
     tm: State<'_, TerminalManager>,

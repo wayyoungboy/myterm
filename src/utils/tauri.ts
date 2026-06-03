@@ -47,6 +47,10 @@ export const sftpReadFile = (sessionId: string, path: string) =>
   invoke<number[]>('sftp_read_file', { sessionId, path });
 export const sftpWriteFile = (sessionId: string, path: string, data: number[]) =>
   invoke('sftp_write_file', { sessionId, path, data });
+export const sftpDownloadPath = (sessionId: string, remotePath: string, localParent: string) =>
+  invoke<number>('sftp_download_path', { sessionId, remotePath, localParent });
+export const sftpUploadPath = (sessionId: string, localPath: string, remoteParent: string) =>
+  invoke<number>('sftp_upload_path', { sessionId, localPath, remoteParent });
 export const sftpRemoveFile = (sessionId: string, path: string) =>
   invoke('sftp_remove_file', { sessionId, path });
 export const sftpRename = (sessionId: string, src: string, dst: string) =>
