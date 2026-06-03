@@ -92,6 +92,7 @@ pub fn mkdir(session: &Session, path: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn stat(session: &Session, path: &str) -> Result<ssh2::FileStat, String> {
     let sftp = session.sftp().map_err(|e| format!("SFTP init failed: {}", e))?;
     sftp.stat(std::path::Path::new(path))

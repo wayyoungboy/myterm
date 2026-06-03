@@ -12,7 +12,6 @@ use crate::ssh::SshSession;
 
 pub struct TerminalSession {
     pub id: String,
-    pub connection_id: String,
     pub _ssh: SshSession,       // Keep the SSH session + TCP stream alive
     pub session: Session,       // Clone reference for quick access
     pub channel: Arc<Mutex<Channel>>,

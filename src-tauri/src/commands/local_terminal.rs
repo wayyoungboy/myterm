@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use parking_lot::Mutex;
 use std::io::{Read, Write};
-use std::process::{Command, Stdio, Child};
+use std::process::{Command, Stdio, Child, ChildStdin};
 use std::thread;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
 
 pub struct LocalTerminalSession {
-    pub id: String,
     pub child: Child,
+    pub stdin: ChildStdin,
 }
 
 pub struct LocalTerminalManager {
@@ -50,7 +50,7 @@ pub fn open_local_terminal(
     // Take stdout and stderr for reading
     let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-    let mut stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
+    let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
 
     // Spawn stdout reader thread
     let sid = session_id.clone();
@@ -92,8 +92,8 @@ pub fn open_local_terminal(
     });
 
     ltm.sessions.lock().insert(session_id.clone(), LocalTerminalSession {
-        id: session_id.clone(),
         child,
+        stdin,
     });
 
     Ok(session_id)
@@ -107,15 +107,11 @@ pub fn local_terminal_write(
 ) -> Result<(), String> {
     let mut sessions = ltm.sessions.lock();
     if let Some(session) = sessions.get_mut(&session_id) {
-        if let Some(ref mut stdin) = session.child.stdin {
-            stdin.write_all(data.as_bytes())
-                .map_err(|e| format!("Write failed: {}", e))?;
-            stdin.flush()
-                .map_err(|e| format!("Flush failed: {}", e))?;
-            Ok(())
-        } else {
-            Err("stdin not available".to_string())
-        }
+        session.stdin.write_all(data.as_bytes())
+            .map_err(|e| format!("Write failed: {}", e))?;
+        session.stdin.flush()
+            .map_err(|e| format!("Flush failed: {}", e))?;
+        Ok(())
     } else {
         Err("Session not found".to_string())
     }

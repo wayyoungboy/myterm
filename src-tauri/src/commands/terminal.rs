@@ -90,7 +90,6 @@ pub fn connect_terminal(
 
     tm.insert(TerminalSession {
         id: session_id.clone(),
-        connection_id,
         _ssh: ssh_session,       // Keep TCP stream alive
         session: session_ref,
         channel: Arc::new(Mutex::new(channel)),
@@ -100,65 +99,6 @@ pub fn connect_terminal(
     // Start the background reader thread
     tm.start_reader(&session_id, app_handle)?;
 
-    Ok(session_id)
-}
-
-#[tauri::command]
-pub fn connect_terminal_for_sftp(
-    db: State<'_, DbConn>,
-    connection_id: String,
-) -> Result<String, String> {
-    // Create a separate SSH session for SFTP operations (blocking mode)
-    let (host, port, auth_type, username, password_enc, key_path, timeout_ms) = {
-        let conn_guard = db.0.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn_guard
-            .prepare("SELECT host, port, auth_type, username, password_enc, key_path, timeout_ms FROM connections WHERE id = ?1")
-            .map_err(|e| e.to_string())?;
-
-        stmt.query_row(rusqlite::params![connection_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i32>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<i32>>(6)?,
-            ))
-        })
-        .map_err(|e| format!("Connection not found: {}", e))?
-    };
-
-    let password = if let Some(ref enc) = password_enc {
-        if !enc.is_empty() {
-            let master = crate::crypto::get_master_password();
-            decrypt_password(enc, &master).ok()
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    let params = SshConnectParams {
-        host,
-        port: port as u16,
-        username,
-        auth_type,
-        password,
-        key_path,
-        timeout_ms: timeout_ms.map(|t| t as u32),
-        proxy_jump_id: None,
-        init_command: None,
-        init_path: None,
-        heartbeat_ms: None,
-    };
-
-    let ssh_session = connect(&params)?;
-    let session_id = uuid::Uuid::new_v4().to_string();
-
-    // Store this session for SFTP use (blocking mode)
-    // We'll use a separate manager or store it differently
     Ok(session_id)
 }
 

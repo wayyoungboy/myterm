@@ -1,18 +1,3 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RdpConnection {
-    pub id: String,
-    pub name: String,
-    pub host: String,
-    pub port: u16,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub domain: Option<String>,
-    pub width: u32,
-    pub height: u32,
-}
-
 #[tauri::command]
 pub fn connect_rdp(
     host: String,
@@ -66,6 +51,7 @@ pub fn connect_rdp(
 
     #[cfg(target_os = "macos")]
     {
+        let _ = (port, username, password, domain, width, height);
         let mut cmd = std::process::Command::new("open");
         cmd.arg(format!("rdp://{}", host));
         match cmd.spawn() {
@@ -76,6 +62,7 @@ pub fn connect_rdp(
 
     #[cfg(target_os = "windows")]
     {
+        let _ = (port, username, password, domain);
         let mut cmd = std::process::Command::new("mstsc");
         cmd.arg(format!("/v:{}", host));
         cmd.arg(format!("/w:{}", width));

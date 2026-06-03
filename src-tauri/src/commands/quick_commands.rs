@@ -84,6 +84,7 @@ pub fn delete_quick_command(db: State<'_, DbConn>, id: String) -> Result<(), Str
 
 /// Replace variables in a command string
 /// Supported: ${host}, ${port}, ${username}, ${date}, ${time}
+#[allow(dead_code)]
 pub fn expand_command(command: &str, host: &str, port: u16, username: &str) -> String {
     let now = chrono::Local::now();
     command

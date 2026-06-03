@@ -7,7 +7,6 @@ use std::thread;
 use tauri::{AppHandle, Emitter, State};
 
 pub struct TelnetSession {
-    pub id: String,
     pub stream: TcpStream,
 }
 
@@ -129,7 +128,6 @@ pub fn connect_telnet(
     });
 
     tm.sessions.lock().insert(session_id.clone(), TelnetSession {
-        id: session_id.clone(),
         stream: write_stream,
     });
 

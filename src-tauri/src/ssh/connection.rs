@@ -4,6 +4,7 @@ use std::time::Duration;
 use std::io::Read;
 use super::SshSession;
 
+#[allow(dead_code)]
 pub struct SshConnectParams {
     pub host: String,
     pub port: u16,
@@ -102,13 +103,14 @@ pub fn connect(params: &SshConnectParams) -> Result<SshSession, String> {
     })
 }
 
+#[allow(dead_code)]
 pub fn connect_through_jump(
     jump_session: &Session,
     target_host: &str,
     target_port: u16,
 ) -> Result<TcpStream, String> {
     // Open a direct-tcpip channel through the jump host to the target
-    let channel = jump_session
+    let _channel = jump_session
         .channel_direct_tcpip(target_host, target_port, None)
         .map_err(|e| format!("Jump tunnel failed: {}", e))?;
 
@@ -118,6 +120,7 @@ pub fn connect_through_jump(
     Err("ProxyJump tunneling requires custom stream wrapper - not yet implemented".to_string())
 }
 
+#[allow(dead_code)]
 pub fn exec_command(session: &Session, cmd: &str) -> Result<String, String> {
     let mut channel = session.channel_session()
         .map_err(|e| format!("Channel open failed: {}", e))?;
