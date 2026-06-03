@@ -92,6 +92,7 @@ interface ContextMenuState {
 }
 
 const initialCtx: ContextMenuState = { visible: false, x: 0, y: 0, entry: null };
+const MAX_TEXT_EDIT_BYTES = 1024 * 1024;
 
 // ---------- component ----------
 
@@ -131,6 +132,9 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   const [mkdirValue, setMkdirValue] = useState('');
   const [chmodTarget, setChmodTarget] = useState<SftpEntry | null>(null);
   const [chmodValue, setChmodValue] = useState('');
+  const [editTarget, setEditTarget] = useState<SftpEntry | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
 
   // Loading overlay for upload/download
   const [transferLoading, setTransferLoading] = useState(false);
@@ -403,6 +407,50 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     }
   };
 
+  const startEditRemoteFile = async () => {
+    const entry = ctxMenu.entry;
+    if (!entry || entry.is_dir || ctxSide !== 'remote') return;
+    setCtxMenu(initialCtx);
+
+    if (entry.size > MAX_TEXT_EDIT_BYTES) {
+      alert('Online editing is limited to text files up to 1 MB.');
+      return;
+    }
+
+    setEditLoading(true);
+    try {
+      const data = await sftpReadFile(sessionId, entry.path);
+      const bytes = new Uint8Array(data);
+      if (bytes.includes(0)) {
+        alert('This file looks binary and cannot be edited inline.');
+        return;
+      }
+
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      setEditTarget(entry);
+      setEditValue(text);
+    } catch (e: any) {
+      alert('Open failed: ' + (e?.toString?.() ?? e));
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const confirmEditRemoteFile = async () => {
+    if (!editTarget) return;
+    setEditLoading(true);
+    try {
+      const bytes = Array.from(new TextEncoder().encode(editValue));
+      await sftpWriteFile(sessionId, editTarget.path, bytes);
+      await loadRemote(remotePath);
+      setEditTarget(null);
+    } catch (e: any) {
+      alert('Save failed: ' + (e?.toString?.() ?? e));
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   // ---- render helpers ----
 
   const Breadcrumb = ({
@@ -645,6 +693,12 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
                   <span>Download</span>
                 </div>
               )}
+              {!ctxMenu.entry.is_dir && ctxSide === 'remote' && (
+                <div className="context-menu-item" onClick={startEditRemoteFile}>
+                  <Edit size={14} />
+                  <span>Edit</span>
+                </div>
+              )}
               <div className="context-menu-item" onClick={startRename}>
                 <Edit size={14} />
                 <span>Rename</span>
@@ -758,6 +812,46 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
                 Apply
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remote text edit modal */}
+      {editTarget && (
+        <div className="modal-overlay" onClick={() => setEditTarget(null)}>
+          <div
+            className="modal animate-slide-in flex flex-col"
+            style={{ width: 'min(860px, 92vw)', height: 'min(680px, 86vh)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-title">Edit Remote File</div>
+            <div className="text-xs mb-2 text-[var(--text-secondary)] truncate">
+              {editTarget.path}
+            </div>
+            <textarea
+              className="input flex-1 min-h-0 resize-none font-mono text-xs leading-5"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              spellCheck={false}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2 mt-4">
+              <button className="btn btn-secondary" onClick={() => setEditTarget(null)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={confirmEditRemoteFile} disabled={editLoading}>
+                {editLoading ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editLoading && !editTarget && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--bg-primary)]/70 backdrop-blur-sm">
+          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] shadow-lg">
+            <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
+            <span className="text-sm">Opening...</span>
           </div>
         </div>
       )}
