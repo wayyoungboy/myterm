@@ -11,6 +11,7 @@ MyTerm 当前按 SSH-first 桌面管理器推进，优先保证 SSH 连接、终
 ### SSH 连接与终端
 
 - 连接中心作为默认工作台，支持连接 CRUD、分组字段、搜索、延迟检测和连接测试。
+- 编辑连接会保留完整 SSH/代理/初始化配置；密码认证下密码框留空会保留已保存密码，切换到密钥认证会清掉旧密码。
 - 侧边栏与连接中心均可打开 SSH 终端、SFTP 和监控 tab。
 - tab 类型按 `terminal` / `sftp` / `monitor` 路由到真实视图。
 - 终端 tab 切换不再触发 SSH 断开；关闭 tab 才释放 session。
@@ -97,7 +98,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - `npm run build`：通过。
 - `cd src-tauri && cargo check`：通过，当前无 Rust warning。
-- `cd src-tauri && cargo test`：通过，21 个测试。
+- `cd src-tauri && cargo test`：通过，24 个测试。
 - SSH smoke test：通过，测试服务器返回 `MYTERM_SSH_OK`。
 
 ## 已知遗留

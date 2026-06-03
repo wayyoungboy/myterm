@@ -1,6 +1,7 @@
 use crate::crypto::{encrypt_password, get_master_password};
 use crate::db::models::{Connection, ConnectionInput, Group};
 use crate::db::DbConn;
+use rusqlite::OptionalExtension;
 use tauri::State;
 use uuid::Uuid;
 
@@ -52,6 +53,43 @@ fn to_response(conn: &Connection) -> ConnectionResponse {
         remark: conn.remark.clone(),
         created_at: conn.created_at.clone(),
         updated_at: conn.updated_at.clone(),
+    }
+}
+
+fn auth_type_keeps_password(auth_type: &str) -> bool {
+    matches!(auth_type, "password" | "interactive" | "ask")
+}
+
+fn current_password_enc(
+    conn_guard: &rusqlite::Connection,
+    id: &str,
+) -> Result<Option<String>, String> {
+    conn_guard
+        .query_row(
+            "SELECT password_enc FROM connections WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map(|value| value.flatten())
+        .map_err(|e| e.to_string())
+}
+
+fn encrypted_password_for_update(
+    conn_guard: &rusqlite::Connection,
+    id: &str,
+    auth_type: &str,
+    password: Option<&str>,
+) -> Result<Option<String>, String> {
+    if let Some(password) = password.filter(|value| !value.is_empty()) {
+        let master = get_master_password();
+        return Ok(Some(encrypt_password(password, &master)));
+    }
+
+    if auth_type_keeps_password(auth_type) {
+        current_password_enc(conn_guard, id)
+    } else {
+        Ok(None)
     }
 }
 
@@ -281,6 +319,7 @@ pub fn update_connection(
     input: ConnectionInput,
 ) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    let auth_type = input.auth_type.unwrap_or_else(|| "password".to_string());
     log::info!(
         target: "myterm::connections",
         "update connection start id={} name={} host={} port={}",
@@ -290,24 +329,15 @@ pub fn update_connection(
         input.port.unwrap_or(22)
     );
 
-    // Encrypt password if provided
-    let encrypted_password = if let Some(ref pwd) = input.password {
-        if !pwd.is_empty() {
-            let master = get_master_password();
-            Some(encrypt_password(pwd, &master))
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    let encrypted_password =
+        encrypted_password_for_update(&conn, &id, &auth_type, input.password.as_deref())?;
 
     let result = conn.execute(
         "UPDATE connections SET group_id=?1, name=?2, host=?3, port=?4, auth_type=?5, username=?6, password_enc=?7, key_path=?8, credential_id=?9, proxy_type=?10, proxy_host=?11, proxy_port=?12, proxy_jump_id=?13, init_command=?14, init_path=?15, timeout_ms=?16, heartbeat_ms=?17, remark=?18, updated_at=CURRENT_TIMESTAMP WHERE id=?19",
         rusqlite::params![
             input.group_id, input.name, input.host,
             input.port.unwrap_or(22),
-            input.auth_type.unwrap_or_else(|| "password".to_string()),
+            auth_type,
             input.username, encrypted_password, input.key_path, input.credential_id,
             input.proxy_type, input.proxy_host, input.proxy_port, input.proxy_jump_id,
             input.init_command, input.init_path, input.timeout_ms,
@@ -548,4 +578,48 @@ pub fn search_connections(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let pattern = format!("%{}%", query);
     query_connections(&conn, "SELECT id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark, created_at, updated_at FROM connections WHERE name LIKE ?1 OR host LIKE ?1 OR remark LIKE ?1 ORDER BY name", &[&pattern])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::decrypt_password;
+    use crate::db::schema::init_db;
+
+    fn test_connection_db(password: Option<&str>) -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().expect("db");
+        init_db(&conn).expect("schema");
+        let encrypted = password.map(|pwd| encrypt_password(pwd, &get_master_password()));
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username, password_enc, heartbeat_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params!["conn-1", "Server", "127.0.0.1", 22, "password", "root", encrypted, 5000],
+        )
+        .expect("insert connection");
+        conn
+    }
+
+    #[test]
+    fn update_password_preserves_existing_password_when_input_omits_password() {
+        let conn = test_connection_db(Some("old-secret"));
+
+        let encrypted =
+            encrypted_password_for_update(&conn, "conn-1", "password", None).expect("password");
+
+        let plaintext = decrypt_password(
+            encrypted.as_deref().expect("encrypted"),
+            &get_master_password(),
+        )
+        .expect("decrypt");
+        assert_eq!(plaintext, "old-secret");
+    }
+
+    #[test]
+    fn update_password_clears_existing_password_when_switching_to_key_auth() {
+        let conn = test_connection_db(Some("old-secret"));
+
+        let encrypted =
+            encrypted_password_for_update(&conn, "conn-1", "key", None).expect("password");
+
+        assert!(encrypted.is_none());
+    }
 }

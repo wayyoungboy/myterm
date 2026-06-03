@@ -346,7 +346,26 @@ export function ConnectionCenter() {
       {showForm && (
         <ConnectionForm
           connectionId={editConn?.id}
-          initialData={editConn ? { name: editConn.name, host: editConn.host, port: editConn.port, username: editConn.username || undefined, auth_type: editConn.auth_type, key_path: editConn.key_path || undefined } : undefined}
+          hasExistingPassword={editConn?.has_password}
+          initialData={editConn ? {
+            group_id: editConn.group_id || undefined,
+            name: editConn.name,
+            host: editConn.host,
+            port: editConn.port,
+            auth_type: editConn.auth_type,
+            username: editConn.username || undefined,
+            key_path: editConn.key_path || undefined,
+            credential_id: editConn.credential_id || undefined,
+            proxy_type: editConn.proxy_type || undefined,
+            proxy_host: editConn.proxy_host || undefined,
+            proxy_port: editConn.proxy_port || undefined,
+            proxy_jump_id: editConn.proxy_jump_id || undefined,
+            init_command: editConn.init_command || undefined,
+            init_path: editConn.init_path || undefined,
+            timeout_ms: editConn.timeout_ms || undefined,
+            heartbeat_ms: editConn.heartbeat_ms || undefined,
+            remark: editConn.remark || undefined,
+          } : undefined}
           onClose={() => { setShowForm(false); setEditConn(null); }}
           onSaved={() => { setShowForm(false); setEditConn(null); loadData(); }}
         />

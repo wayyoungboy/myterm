@@ -6,6 +6,7 @@ import { X, TestTube, Save, Key, Lock, Server, Link, Globe, Settings } from 'luc
 interface Props {
   connectionId?: string;
   initialData?: Partial<ConnectionInput>;
+  hasExistingPassword?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -19,7 +20,7 @@ const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
   { id: 'other', label: '其他', icon: <Settings size={13} /> },
 ];
 
-export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: Props) {
+export function ConnectionForm({ connectionId, initialData, hasExistingPassword, onClose, onSaved }: Props) {
   const [form, setForm] = useState<ConnectionInput>({
     name: '',
     host: '',
@@ -182,7 +183,13 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
             <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               <Lock size={10} className="inline mr-1" />登录密码
             </label>
-            <input className="input" type="password" value={form.password || ''} onChange={(e) => handleChange('password', e.target.value)} />
+            <input
+              className="input"
+              type="password"
+              value={form.password || ''}
+              onChange={(e) => handleChange('password', e.target.value)}
+              placeholder={connectionId && hasExistingPassword ? '留空保持已保存密码' : ''}
+            />
           </div>
         )}
       </div>

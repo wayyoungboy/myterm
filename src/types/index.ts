@@ -17,9 +17,9 @@ export interface Connection {
   port: number;
   auth_type: string;
   username: string | null;
-  password_enc: string | null;
+  has_password: boolean;
   key_path: string | null;
-  credential_id: string | null;
+  credential_id?: string | null;
   proxy_type: string | null;
   proxy_host: string | null;
   proxy_port: number | null;

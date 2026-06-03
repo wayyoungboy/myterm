@@ -11,6 +11,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 需求项 | 状态 | 说明 |
 | --- | --- | --- |
 | 连接 CRUD | ✅ | SQLite + Tauri commands + 连接中心 UI |
+| 编辑保留配置 | ✅ | 编辑连接保留 SSH/代理/初始化字段；密码框留空保留原密码，切换密钥认证清空旧密码 |
 | 分组字段 | ✅ | DB、命令、表单选择已支持 |
 | 密码认证 | ✅ | `ssh2::Session::userauth_password` |
 | 密钥认证 | ✅ | `userauth_pubkey_file` |
@@ -123,6 +124,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - TypeScript/Vite build 通过。
 - Rust check 通过且无 warning。
-- Rust 单元测试通过，当前覆盖 21 个测试。
+- Rust 单元测试通过，当前覆盖 24 个测试。
 - 真实 SSH 测试服务器连接通过。
 - macOS arm64 `.app` 和 DMG 产物已生成；Windows MSI / Linux DEB 尚未在对应平台验证。
