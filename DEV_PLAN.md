@@ -141,8 +141,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [x] 本地转发基础命令
 - [x] 动态 SOCKS5 基础命令
 - [x] 转发列表 UI
+- [x] 关闭转发时停止监听循环
+- [x] 转发使用独立 SSH session
 - [ ] 远程转发
-- [ ] 关闭转发时真正停止监听线程
 - [ ] 流量统计
 - [ ] 真实环境回归测试
 
@@ -185,5 +186,5 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [x] SFTP/Monitor 从共享 SSH session 改为独立 SSH session
 - [ ] CSS 变量和间距规范继续收敛
 - [ ] Tauri 权限配置最小化复核
-- [ ] 端口转发线程生命周期重构
+- [x] 端口转发线程生命周期重构
 - [ ] 监控数据格式从 section 文本迁移到 JSON

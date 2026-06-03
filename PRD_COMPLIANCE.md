@@ -80,7 +80,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 快捷命令 | ✅ | CRUD、变量展开、一键执行到当前 SSH 终端 |
 | 设置 | ✅ | 本地设置读写 |
 | AI 助手 | ⚠️ | 会话和消息可保存，真实模型 API 未接入 |
-| 端口转发 | ⚠️ | local/dynamic 基础命令存在，remote 和关闭生命周期未完成 |
+| 端口转发 | ⚠️ | local/dynamic 基础命令存在，关闭会停止监听循环；remote 和流量统计未完成 |
 | Telnet | ⚠️ | 基础 TCP/Telnet I/O 存在，未完整验收 |
 | RDP | ⚠️ | 外部客户端 launcher 存在，未完整验收 |
 | 云同步 | ❌ | 未实现 |

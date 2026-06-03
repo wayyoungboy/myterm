@@ -54,6 +54,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - Settings 支持本地设置读写。
 - AI 当前是本地会话和消息存储，回复仍为占位提示，尚未接入真实模型 API。
 - Port forwarding、Telnet、RDP launcher 有后端命令和 UI，但还未作为完整主线完成验收。
+- Port forwarding 的 local/dynamic 监听已接入停止标志，关闭转发时会停止监听循环，并使用独立 SSH session。
 
 ### 运行日志
 
@@ -76,7 +77,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - ProxyJump/HTTP/SOCKS 出站代理字段已有雏形，但完整链路尚未实现。
 - SFTP/Monitor 当前为每次操作建立独立 SSH 连接，稳定性优先；后续可做连接池优化以减少握手开销。
-- 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，关闭转发只标记状态，监听线程生命周期还需产品化处理。
+- 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，流量统计和真实环境回归仍需补充。
 - Telnet 和 RDP launcher 未做真实环境矩阵验证。
 - AI 未接入真实模型提供方。
 - SFTP 批量操作、权限编辑、拖拽上传和远程在线编辑仍是增强项。

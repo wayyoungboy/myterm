@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
-use ssh2::{Session, Channel};
+use ssh2::Channel;
 use std::io::{Read, Write};
 use std::thread;
 use tauri::{AppHandle, Emitter};
@@ -14,7 +14,6 @@ pub struct TerminalSession {
     pub id: String,
     pub connection_id: String,
     pub _ssh: SshSession,       // Keep the SSH session + TCP stream alive
-    pub session: Session,       // Clone reference for quick access
     pub channel: Arc<Mutex<Channel>>,
     pub running: Arc<AtomicBool>,
 }
@@ -28,11 +27,6 @@ impl TerminalManager {
         TerminalManager {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
-    }
-
-    pub fn get_session(&self, id: &str) -> Option<Session> {
-        let sessions = self.sessions.lock();
-        sessions.get(id).map(|s| s.session.clone())
     }
 
     pub fn get_connection_id(&self, id: &str) -> Option<String> {

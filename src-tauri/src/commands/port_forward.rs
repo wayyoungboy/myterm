@@ -1,8 +1,12 @@
+use crate::commands::ssh_params::connect_for_terminal_session;
+use crate::db::DbConn;
 use crate::terminal::TerminalManager;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use parking_lot::Mutex;
 use std::thread;
 use tauri::State;
@@ -20,7 +24,12 @@ pub struct PortForward {
 }
 
 pub struct PortForwardManager {
-    forwards: Arc<Mutex<HashMap<String, PortForward>>>,
+    forwards: Arc<Mutex<HashMap<String, ManagedForward>>>,
+}
+
+struct ManagedForward {
+    info: PortForward,
+    running: Arc<AtomicBool>,
 }
 
 impl PortForwardManager {
@@ -33,6 +42,7 @@ impl PortForwardManager {
 
 #[tauri::command]
 pub fn create_port_forward(
+    db: State<'_, DbConn>,
     tm: State<'_, TerminalManager>,
     pfm: State<'_, PortForwardManager>,
     session_id: String,
@@ -54,29 +64,53 @@ pub fn create_port_forward(
         remote_host,
         remote_port
     );
-    let session = tm.get_session(&session_id).ok_or("Session not found")?;
+    let ssh = connect_for_terminal_session(&db, &tm, &session_id)?;
     let id = uuid::Uuid::new_v4().to_string();
+    let running = Arc::new(AtomicBool::new(true));
 
     match forward_type.as_str() {
         "local" => {
             let listener = TcpListener::bind(format!("{}:{}", local_host, local_port))
                 .map_err(|e| format!("Bind failed: {}", e))?;
+            listener.set_nonblocking(true).ok();
 
             let rh = remote_host.clone();
+            let run = running.clone();
+            let forward_id = id.clone();
             thread::spawn(move || {
-                for stream in listener.incoming() {
-                    if let Ok(client) = stream {
-                        let session = session.clone();
-                        let rh = rh.clone();
-                        let rp = remote_port;
-                        thread::spawn(move || {
-                            if let Ok(mut channel) = session.channel_direct_tcpip(&rh, rp, None) {
-                                let mut client = client;
-                                let _ = std::io::copy(&mut client, &mut channel);
-                            }
-                        });
+                let _ssh = ssh;
+                while run.load(Ordering::SeqCst) {
+                    match listener.accept() {
+                        Ok((client, _)) => {
+                            let session = _ssh.session.clone();
+                            let rh = rh.clone();
+                            let rp = remote_port;
+                            thread::spawn(move || {
+                                if let Ok(mut channel) = session.channel_direct_tcpip(&rh, rp, None) {
+                                    let mut client = client;
+                                    let _ = std::io::copy(&mut client, &mut channel);
+                                }
+                            });
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(100));
+                        }
+                        Err(err) => {
+                            log::error!(
+                                target: "myterm::port_forward",
+                                "local listener failed forward_id={} error={}",
+                                forward_id,
+                                err
+                            );
+                            break;
+                        }
                     }
                 }
+                log::info!(
+                    target: "myterm::port_forward",
+                    "local listener stopped forward_id={}",
+                    forward_id
+                );
             });
         }
         "remote" => {
@@ -91,16 +125,39 @@ pub fn create_port_forward(
         "dynamic" => {
             let listener = TcpListener::bind(format!("{}:{}", local_host, local_port))
                 .map_err(|e| format!("Bind failed: {}", e))?;
+            listener.set_nonblocking(true).ok();
 
+            let run = running.clone();
+            let forward_id = id.clone();
             thread::spawn(move || {
-                for stream in listener.incoming() {
-                    if let Ok(client) = stream {
-                        let session = session.clone();
-                        thread::spawn(move || {
-                            handle_socks5(client, &session);
-                        });
+                let _ssh = ssh;
+                while run.load(Ordering::SeqCst) {
+                    match listener.accept() {
+                        Ok((client, _)) => {
+                            let session = _ssh.session.clone();
+                            thread::spawn(move || {
+                                handle_socks5(client, &session);
+                            });
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            thread::sleep(Duration::from_millis(100));
+                        }
+                        Err(err) => {
+                            log::error!(
+                                target: "myterm::port_forward",
+                                "dynamic listener failed forward_id={} error={}",
+                                forward_id,
+                                err
+                            );
+                            break;
+                        }
                     }
                 }
+                log::info!(
+                    target: "myterm::port_forward",
+                    "dynamic listener stopped forward_id={}",
+                    forward_id
+                );
             });
         }
         _ => {
@@ -125,7 +182,10 @@ pub fn create_port_forward(
         active: true,
     };
 
-    pfm.forwards.lock().insert(id.clone(), forward);
+    pfm.forwards.lock().insert(id.clone(), ManagedForward {
+        info: forward,
+        running,
+    });
     log::info!(
         target: "myterm::port_forward",
         "create success op_id={} forward_id={}",
@@ -141,7 +201,7 @@ pub fn get_port_forwards(
     pfm: State<'_, PortForwardManager>,
 ) -> Result<Vec<PortForward>, String> {
     let forwards = pfm.forwards.lock();
-    Ok(forwards.values().cloned().collect())
+    Ok(forwards.values().map(|managed| managed.info.clone()).collect())
 }
 
 #[tauri::command]
@@ -151,12 +211,13 @@ pub fn close_port_forward(
 ) -> Result<(), String> {
     let mut forwards = pfm.forwards.lock();
     if let Some(forward) = forwards.get_mut(&id) {
-        forward.active = false;
+        forward.info.active = false;
+        forward.running.store(false, Ordering::SeqCst);
         log::info!(
             target: "myterm::port_forward",
-            "close marked inactive forward_id={} session_id={}",
+            "close requested forward_id={} session_id={}",
             id,
-            forward.session_id
+            forward.info.session_id
         );
     } else {
         log::warn!(

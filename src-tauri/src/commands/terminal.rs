@@ -77,7 +77,6 @@ pub fn connect_terminal(
             id: session_id.clone(),
             connection_id: connection_id.clone(),
             _ssh: ssh_session,       // Keep TCP stream alive
-            session: session_ref,
             channel: Arc::new(Mutex::new(channel)),
             running: Arc::new(AtomicBool::new(true)),
         });
