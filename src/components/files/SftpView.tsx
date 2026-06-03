@@ -21,6 +21,7 @@ import {
   sftpRemoveFile,
   sftpRename,
   sftpMkdir,
+  connectTerminal,
 } from '../../utils/tauri';
 
 // ---------- helpers ----------
@@ -96,13 +97,16 @@ type PanelSide = 'remote' | 'local';
 
 export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   const activeTab = useAppStore((s) => s.tabs.find((t) => t.id === s.activeTabId));
+  const updateTab = useAppStore((s) => s.updateTab);
   const sessionId = sessionIdProp || activeTab?.sessionId || '';
+  const connectStartedRef = useRef(false);
 
   // Remote state
   const [remotePath, setRemotePath] = useState('/');
   const [remoteEntries, setRemoteEntries] = useState<SftpEntry[]>([]);
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
 
   // Local state
   const [localPath, setLocalPath] = useState('/');
@@ -125,6 +129,24 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadSide, setUploadSide] = useState<PanelSide>('remote');
+
+  useEffect(() => {
+    if (sessionId || !activeTab?.connectionId || connectStartedRef.current) return;
+
+    connectStartedRef.current = true;
+    setSessionLoading(true);
+    setRemoteError(null);
+
+    connectTerminal(activeTab.connectionId)
+      .then((sid) => {
+        updateTab(activeTab.id, { sessionId: sid });
+      })
+      .catch((e) => {
+        connectStartedRef.current = false;
+        setRemoteError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setSessionLoading(false));
+  }, [activeTab?.connectionId, activeTab?.id, sessionId, updateTab]);
 
   // ---- remote helpers ----
 
@@ -288,7 +310,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     const entry = ctxMenu.entry;
     if (!entry) return;
     setCtxMenu(initialCtx);
-    if (!confirm(`Delete "${entry.name}"?`)) return;
+    
 
     try {
       if (ctxSide === 'remote') {
@@ -540,8 +562,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
           title="Remote"
           icon={Globe}
           entries={remoteEntries}
-          loading={remoteLoading}
-          error={remoteError}
+          loading={sessionLoading || remoteLoading}
+          error={remoteError || (!sessionLoading && !sessionId ? 'No SSH session available' : null)}
           currentPath={remotePath}
           onNavigate={navigateRemote}
           onGoUp={goUpRemote}

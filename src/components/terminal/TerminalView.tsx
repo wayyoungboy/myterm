@@ -2,36 +2,36 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { useAppStore } from '../../stores/appStore';
 import { createConnection } from '../../utils/tauri';
 import type { ConnectionInput } from '../../types';
 
 import '@xterm/xterm/css/xterm.css';
 
-const CATPPUCCIN_MOCHA = {
-  background: '#1e1e2e',
-  foreground: '#cdd6f4',
-  cursor: '#f5e0dc',
-  cursorAccent: '#1e1e2e',
-  selectionBackground: '#585b7066',
-  selectionForeground: '#cdd6f4',
-  black: '#45475a',
-  red: '#f38ba8',
-  green: '#a6e3a1',
-  yellow: '#f9e2af',
-  blue: '#89b4fa',
-  magenta: '#f5c2e7',
-  cyan: '#94e2d5',
-  white: '#bac2de',
-  brightBlack: '#585b70',
-  brightRed: '#f38ba8',
-  brightGreen: '#a6e3a1',
-  brightYellow: '#f9e2af',
-  brightBlue: '#89b4fa',
-  brightMagenta: '#f5c2e7',
-  brightCyan: '#94e2d5',
-  brightWhite: '#a6adc8',
+const TERMINAL_THEME = {
+  background: '#000000',
+  foreground: '#e5e5e5',
+  cursor: '#3b82f6',
+  cursorAccent: '#000000',
+  selectionBackground: '#3b82f640',
+  selectionForeground: '#ffffff',
+  black: '#171717',
+  red: '#ef4444',
+  green: '#22c55e',
+  yellow: '#eab308',
+  blue: '#3b82f6',
+  magenta: '#a855f7',
+  cyan: '#06b6d4',
+  white: '#d4d4d4',
+  brightBlack: '#404040',
+  brightRed: '#f87171',
+  brightGreen: '#4ade80',
+  brightYellow: '#facc15',
+  brightBlue: '#60a5fa',
+  brightMagenta: '#c084fc',
+  brightCyan: '#22d3ee',
+  brightWhite: '#ffffff',
 };
 
 type AuthType = 'password' | 'key';
@@ -41,7 +41,8 @@ interface TerminalViewProps {
 }
 
 export function TerminalView({ connectionId }: TerminalViewProps) {
-  const { updateTab, activeTabId } = useAppStore();
+  const { updateTab, activeTabId, tabs } = useAppStore();
+  const activeTab = tabs.find((t) => t.id === activeTabId);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const termInstance = useRef<Terminal | null>(null);
@@ -52,6 +53,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [terminalReady, setTerminalReady] = useState(false);
 
   const [formName, setFormName] = useState('');
   const [formHost, setFormHost] = useState('');
@@ -61,23 +63,21 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   const [formKeyPath, setFormKeyPath] = useState('');
   const [formAuthType, setFormAuthType] = useState<AuthType>('password');
 
-  // Cleanup on unmount - disconnect session and remove listeners
+  // Cleanup frontend listeners on unmount. The tab close handler owns SSH disconnects.
   useEffect(() => {
     return () => {
       unlistenOutput.current?.();
       unlistenExit.current?.();
-      if (sessionId) {
-        invoke('disconnect_terminal', { sessionId }).catch(() => {});
-      }
+      onDataDisposable.current?.();
     };
-  }, [sessionId]);
+  }, []);
 
   // Initialize xterm.js
   useEffect(() => {
     if (!terminalRef.current || termInstance.current) return;
 
     const terminal = new Terminal({
-      theme: CATPPUCCIN_MOCHA,
+      theme: TERMINAL_THEME,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
       fontSize: 14,
       lineHeight: 1.2,
@@ -94,11 +94,13 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
 
     termInstance.current = terminal;
     fitAddon.current = fit;
+    setTerminalReady(true);
 
     return () => {
       terminal.dispose();
       termInstance.current = null;
       fitAddon.current = null;
+      setTerminalReady(false);
     };
   }, []);
 
@@ -133,13 +135,6 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     return () => observer.disconnect();
   }, [sessionId]);
 
-  // Connect immediately if connectionId provided
-  useEffect(() => {
-    if (connectionId && !sessionId && !connecting) {
-      handleConnect(connectionId);
-    }
-  }, [connectionId]);
-
   const onDataDisposable = useRef<(() => void) | null>(null);
 
   const setupTerminalIO = useCallback((sid: string) => {
@@ -162,6 +157,8 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
       term.writeln('');
       term.writeln('\x1b[38;2;249;226;175m  Session ended.\x1b[0m');
       setSessionId(null);
+      const tabId = useAppStore.getState().activeTabId;
+      if (tabId) emit('terminal-disconnected', tabId);
     }).then((unlisten) => {
       unlistenExit.current = unlisten;
     });
@@ -221,6 +218,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
             sessionId: sid,
             connectionId: resolvedId,
           });
+          emit('terminal-connected', activeTabId);
         }
 
         // Setup real terminal I/O
@@ -238,6 +236,22 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     },
     [formHost, formName, formPort, formUsername, formPassword, formKeyPath, formAuthType, activeTabId, updateTab, setupTerminalIO]
   );
+
+  // Reattach to an existing tab session after switching tabs.
+  useEffect(() => {
+    if (!terminalReady) return;
+    if (!activeTab?.sessionId || sessionId === activeTab.sessionId) return;
+    setSessionId(activeTab.sessionId);
+    setupTerminalIO(activeTab.sessionId);
+  }, [activeTab?.sessionId, sessionId, setupTerminalIO, terminalReady]);
+
+  // Connect immediately if connectionId provided and the tab has no session yet.
+  useEffect(() => {
+    if (!terminalReady) return;
+    if (connectionId && !activeTab?.sessionId && !sessionId && !connecting) {
+      handleConnect(connectionId);
+    }
+  }, [connectionId, activeTab?.sessionId, sessionId, connecting, handleConnect, terminalReady]);
 
   const handleDisconnect = useCallback(async () => {
     if (!sessionId) return;
@@ -305,7 +319,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
                 </div>
               )}
               {error && (
-                <div className="text-xs px-3 py-2 rounded-md" style={{ color: 'var(--error)', background: 'rgba(243,139,168,0.1)' }}>
+                <div className="text-xs px-3 py-2 rounded-md" style={{ color: 'var(--error)', background: 'rgba(239,68,68,0.1)' }}>
                   {error}
                 </div>
               )}

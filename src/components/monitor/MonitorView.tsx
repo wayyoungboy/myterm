@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { getMonitorData } from '../../utils/tauri';
-import type { MonitorData, DiskPartition, GpuData } from '../../types';
+import { connectTerminal, getMonitorData } from '../../utils/tauri';
+import type { MonitorData, DiskPartition, GpuData, ProcessInfo } from '../../types';
 import { Cpu, HardDrive, Wifi, Server, Activity, Thermometer, Zap } from 'lucide-react';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -220,6 +220,32 @@ function DiskCard({ partitions }: { partitions: DiskPartition[] }) {
   );
 }
 
+function ProcessTable({ title, processes, sortBy }: { title: string; processes: ProcessInfo[]; sortBy: 'cpu' | 'memory' }) {
+  return (
+    <Card title={title} icon={<Activity size={14} />}>
+      <div className="grid gap-1 text-[11px]">
+        <div className="grid grid-cols-[52px_64px_1fr] gap-2 pb-1 border-b border-[var(--border)]" style={{ color: 'var(--text-muted)' }}>
+          <span>PID</span>
+          <span>{sortBy === 'cpu' ? 'CPU' : 'MEM'}</span>
+          <span>Command</span>
+        </div>
+        {processes.slice(0, 6).map((proc) => (
+          <div key={String(proc.pid) + '-' + proc.command + '-' + sortBy} className="grid grid-cols-[52px_64px_1fr] gap-2 items-center min-w-0">
+            <span className="font-mono" style={{ color: 'var(--text-muted)' }}>{proc.pid}</span>
+            <span className="font-mono" style={{ color: usageColor(sortBy === 'cpu' ? proc.cpu : proc.memory) }}>
+              {(sortBy === 'cpu' ? proc.cpu : proc.memory).toFixed(1)}%
+            </span>
+            <span className="truncate" title={proc.args} style={{ color: 'var(--text-primary)' }}>{proc.command || proc.args}</span>
+          </div>
+        ))}
+        {processes.length === 0 && (
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>No process data available</span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 function GpuCard({ gpu }: { gpu: GpuData }) {
   const memPct = gpu.memory_total > 0 ? (gpu.memory_used / gpu.memory_total) * 100 : 0;
 
@@ -258,13 +284,33 @@ function GpuCard({ gpu }: { gpu: GpuData }) {
 // ── Main Component ───────────────────────────────────────────────────
 
 export function MonitorView() {
-  const { tabs, activeTabId } = useAppStore();
+  const { tabs, activeTabId, updateTab } = useAppStore();
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const sessionId = activeTab?.sessionId ?? null;
 
   const [data, setData] = useState<MonitorData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectStartedRef = useRef(false);
+
+  useEffect(() => {
+    if (sessionId || !activeTab?.connectionId || connectStartedRef.current) return;
+
+    connectStartedRef.current = true;
+    setSessionLoading(true);
+    setError(null);
+
+    connectTerminal(activeTab.connectionId)
+      .then((sid) => {
+        updateTab(activeTab.id, { sessionId: sid });
+      })
+      .catch((e) => {
+        connectStartedRef.current = false;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setSessionLoading(false));
+  }, [activeTab?.connectionId, activeTab?.id, sessionId, updateTab]);
 
   const fetchData = useCallback(async () => {
     if (!sessionId) return;
@@ -298,7 +344,7 @@ export function MonitorView() {
   if (!sessionId) {
     return (
       <div className="flex items-center justify-center h-full text-[var(--text-muted)] text-sm">
-        No connection selected
+        {sessionLoading ? 'Connecting SSH session...' : (error || 'No connection selected')}
       </div>
     );
   }
@@ -329,6 +375,8 @@ export function MonitorView() {
         <NetworkCard data={data} />
         <DiskCard partitions={data.disk_partitions} />
         {data.gpu && <GpuCard gpu={data.gpu} />}
+        <ProcessTable title="Top CPU Processes" processes={data.top_cpu_processes || []} sortBy="cpu" />
+        <ProcessTable title="Top Memory Processes" processes={data.top_mem_processes || []} sortBy="memory" />
       </div>
     </div>
   );
