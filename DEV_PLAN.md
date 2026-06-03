@@ -12,11 +12,7 @@ MyTerm 当前优先完成 SSH 对接主线：
 - SFTP 文件管理
 - SSH 会话上的服务器监控
 
-辅助工具入口已恢复，按成熟度分层：
-
-- 已可作为本地工具使用：笔记、快捷命令、设置、连接导入导出。
-- 可用但需继续验收：端口转发、Telnet、RDP launcher。
-- 仅占位：AI 助手真实模型调用、云同步。
+当前验收范围不包含笔记、AI、端口转发、Telnet、快捷命令、云同步和 RDP；这些入口即使保留在界面中，也不作为 SSH-first 主线完成度的阻塞项。
 
 验证服务器：
 
@@ -62,7 +58,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | SSH/SFTP/Monitor tab 路由 | ✅ | 按 tab type 渲染真实视图 |
 | SFTP/Monitor session 隔离 | ✅ | 文件和监控操作使用独立 SSH 连接，避免影响终端 reader |
 | 侧边栏工具入口 | ✅ | Notes/AI/Forward/Telnet/Commands/Settings |
-| 批量操作 | ⚠️ | 后续增强 |
+| 批量操作 | 增强项 | 后续增强，不阻塞当前 SSH-first 主线 |
 | HTTP/SOCKS5 出站代理 | ✅ | 连接测试、终端、SFTP/Monitor 辅助 SSH 会话共享同一代理链路 |
 | ProxyJump 多跳链路 | ✅ | Unix-like 平台通过 SSH direct-tcpip 桥接，支持递归解析和循环检测 |
 
@@ -88,8 +84,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 磁盘读写速率 | ✅ | `/proc/diskstats` 快照差值 |
 | GPU | ✅ | `nvidia-smi` 可用时采集 |
 | 监控解析测试 | ✅ | Rust 单测覆盖 3 个关键解析路径 |
-| BusyBox/procfs 多后端 | ⚠️ | 可作为兼容性增强 |
-| JSON 数据格式 | ⚠️ | 当前仍是 section 文本解析 |
+| BusyBox/procfs 多后端 | 增强项 | 可作为兼容性增强 |
+| JSON 数据格式 | 增强项 | 当前仍是 section 文本解析 |
 
 ---
 
@@ -112,7 +108,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 ---
 
-## 第五阶段：辅助工具
+## 第五阶段：辅助工具（当前不纳入 SSH-first 验收）
+
+以下条目保留为历史状态和后续增强清单，不作为当前 SSH 对接主线的验收阻塞项。
 
 ### 5.1 快捷命令 ✅
 
@@ -139,7 +137,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [x] 安全/通用设置字段持久化
 - [ ] 设置项实际联动到所有运行中组件
 
-### 5.4 端口转发 ⚠️
+### 5.4 端口转发
 
 - [x] 本地转发基础命令
 - [x] 动态 SOCKS5 基础命令
@@ -150,7 +148,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [ ] 流量统计
 - [ ] 真实环境回归测试
 
-### 5.5 Telnet / RDP ⚠️
+### 5.5 Telnet / RDP
 
 - [x] Telnet 基础连接、读写、断开
 - [x] RDP 外部客户端 launcher
