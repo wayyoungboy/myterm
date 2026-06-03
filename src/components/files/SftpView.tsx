@@ -74,6 +74,10 @@ function pathSegments(p: string): { label: string; path: string }[] {
   return segs;
 }
 
+function joinPath(parent: string, name: string): string {
+  return parent === '/' ? `/${name}` : `${parent.replace(/\/+$/, '')}/${name}`;
+}
+
 /** Sort entries: directories first, then alphabetical by name. */
 function sortEntries(entries: SftpEntry[]): SftpEntry[] {
   return [...entries].sort((a, b) => {
@@ -141,6 +145,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadSide, setUploadSide] = useState<PanelSide>('remote');
+  const [dragOverSide, setDragOverSide] = useState<PanelSide | null>(null);
 
   useEffect(() => {
     if (sessionId || !activeTab?.connectionId || connectStartedRef.current) return;
@@ -282,23 +287,29 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     fileInputRef.current?.click();
   };
 
-  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = ''; // reset
+  const uploadFiles = async (files: File[], side: PanelSide) => {
+    if (files.length === 0) return;
+    if (side === 'remote' && !sessionId) {
+      alert('No SSH session available.');
+      return;
+    }
 
     setTransferLoading(true);
     try {
-      const buffer = await file.arrayBuffer();
-      const data = Array.from(new Uint8Array(buffer));
+      for (const file of files) {
+        const buffer = await file.arrayBuffer();
+        const data = Array.from(new Uint8Array(buffer));
 
-      if (uploadSide === 'remote') {
-        const dst = remotePath === '/' ? `/${file.name}` : `${remotePath}/${file.name}`;
-        await sftpWriteFile(sessionId, dst, data);
+        if (side === 'remote') {
+          await sftpWriteFile(sessionId, joinPath(remotePath, file.name), data);
+        } else {
+          await writeLocalFile(joinPath(localPath, file.name), data);
+        }
+      }
+
+      if (side === 'remote') {
         await loadRemote(remotePath);
       } else {
-        const dst = localPath === '/' ? `/${file.name}` : `${localPath}/${file.name}`;
-        await writeLocalFile(dst, data);
         await loadLocal(localPath);
       }
     } catch (err: any) {
@@ -306,6 +317,49 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     } finally {
       setTransferLoading(false);
     }
+  };
+
+  const onFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // reset
+    await uploadFiles(files, uploadSide);
+  };
+
+  const filesFromDrop = (e: React.DragEvent<HTMLDivElement>): File[] => {
+    const files: File[] = [];
+    for (const item of Array.from(e.dataTransfer.items || [])) {
+      if (item.kind !== 'file') continue;
+      const file = item.getAsFile();
+      if (file) files.push(file);
+    }
+    if (files.length === 0) {
+      files.push(...Array.from(e.dataTransfer.files || []));
+    }
+    return files;
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, side: PanelSide) => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDragOverSide(side);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>, side: PanelSide) => {
+    const next = e.relatedTarget;
+    if (next instanceof Node && e.currentTarget.contains(next)) return;
+    if (dragOverSide === side) setDragOverSide(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>, side: PanelSide) => {
+    e.preventDefault();
+    setDragOverSide(null);
+    const files = filesFromDrop(e);
+    if (files.length === 0) {
+      alert('Only files can be uploaded here.');
+      return;
+    }
+    await uploadFiles(files, side);
   };
 
   const handleDelete = async () => {
@@ -499,7 +553,14 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     onGoUp: () => void;
     onRefresh: () => void;
   }) => (
-    <div className="flex flex-col flex-1 min-w-0 border border-[var(--border)] rounded-lg overflow-hidden">
+    <div
+      className={`flex flex-col flex-1 min-w-0 border rounded-lg overflow-hidden transition-colors ${
+        dragOverSide === side ? 'border-[var(--accent)] bg-[var(--bg-surface)]' : 'border-[var(--border)]'
+      }`}
+      onDragOver={(e) => handleDragOver(e, side)}
+      onDragLeave={(e) => handleDragLeave(e, side)}
+      onDrop={(e) => handleDrop(e, side)}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
         <div className="flex items-center gap-2 text-sm font-medium">
@@ -517,7 +578,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
           <button
             onClick={() => handleUpload(side)}
             className="btn btn-ghost p-1"
-            title="Upload file"
+            title="Upload files"
           >
             <Upload size={14} />
           </button>
@@ -555,6 +616,13 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         )}
         {error && (
           <div className="px-3 py-2 text-xs text-[var(--error)]">{error}</div>
+        )}
+        {dragOverSide === side && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-[var(--bg-primary)]/70 pointer-events-none">
+            <div className="rounded-md border border-[var(--accent)] bg-[var(--bg-surface)] px-4 py-3 text-sm text-[var(--text-primary)]">
+              Drop files to upload
+            </div>
+          </div>
         )}
         {/* Table header */}
         <div className="grid gap-2 px-3 py-1 text-xs text-[var(--text-muted)] border-b border-[var(--border)] bg-[var(--bg-secondary)] sticky top-0"
@@ -660,6 +728,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         className="hidden"
         onChange={onFileSelected}
       />
@@ -725,7 +794,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
                 onClick={() => handleUpload(ctxSide)}
               >
                 <Upload size={14} />
-                <span>Upload file</span>
+                <span>Upload files</span>
               </div>
               <div
                 className="context-menu-item"
