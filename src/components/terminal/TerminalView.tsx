@@ -75,6 +75,14 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     onDataDisposable.current = null;
   }, []);
 
+  const clearSessionFromTab = useCallback((sid: string) => {
+    const state = useAppStore.getState();
+    const tab = state.tabs.find((item) => item.sessionId === sid);
+    if (!tab) return;
+    state.updateTab(tab.id, { sessionId: null });
+    emit('terminal-disconnected', tab.id);
+  }, []);
+
   // Cleanup frontend listeners on unmount. The tab close handler owns SSH disconnects.
   useEffect(() => cleanupTerminalIO, [cleanupTerminalIO]);
 
@@ -167,8 +175,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
       term.writeln('');
       term.writeln('\x1b[38;2;249;226;175m  Session ended.\x1b[0m');
       setSessionId(null);
-      const tabId = useAppStore.getState().activeTabId;
-      if (tabId) emit('terminal-disconnected', tabId);
+      clearSessionFromTab(sid);
     }).then((unlisten) => {
       if (ioVersionRef.current !== ioVersion) {
         unlisten();
@@ -189,7 +196,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
 
     // Focus the terminal
     term.focus();
-  }, [cleanupTerminalIO]);
+  }, [cleanupTerminalIO, clearSessionFromTab]);
 
   const handleConnect = useCallback(
     async (targetConnectionId?: string) => {
@@ -279,11 +286,12 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     } catch {}
 
     setSessionId(null);
+    clearSessionFromTab(sessionId);
 
     if (termInstance.current) {
       termInstance.current.writeln('\x1b[38;2;249;226;175m  Disconnected.\x1b[0m');
     }
-  }, [cleanupTerminalIO, sessionId]);
+  }, [cleanupTerminalIO, clearSessionFromTab, sessionId]);
 
   const showForm = !sessionId && !connectionId;
 

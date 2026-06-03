@@ -36,6 +36,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 1.2 | 终端 I/O | ✅ | xterm.js + PTY |
 | 1.3 | 会话保持 | ✅ | tab 切换不再断开 SSH |
 | 1.4 | 非阻塞读取 | ✅ | reader 线程 EOF 检测 |
+| 1.4.1 | 断线会话清理 | ✅ | EOF/read error 会清理后端 session 并清空前端 tab sessionId |
 | 1.5 | 域名 DNS 解析 | ✅ | ToSocketAddrs 替换 parse |
 | 1.6 | 多标签独立实例 | ✅ | 每个 tab 独立 session |
 | 1.7 | 连接状态显示 | ✅ | StatusBar 事件驱动 |

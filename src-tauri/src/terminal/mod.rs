@@ -110,6 +110,8 @@ impl TerminalManager {
             let channel = session.channel.clone();
             let running = session.running.clone();
             let session_id = id.to_string();
+            let connection_id = session.connection_id.clone();
+            let sessions_for_reader = self.sessions.clone();
 
             thread::spawn(move || {
                 let mut buf = [0u8; 8192];
@@ -122,9 +124,12 @@ impl TerminalManager {
                                 drop(channel);
                                 log::info!(
                                     target: "myterm::terminal",
-                                    "reader eof session_id={}",
-                                    session_id
+                                    "reader eof session_id={} connection_id={}",
+                                    session_id,
+                                    connection_id
                                 );
+                                running.store(false, Ordering::SeqCst);
+                                sessions_for_reader.lock().remove(&session_id);
                                 let _ =
                                     app_handle.emit(&format!("terminal-exit-{}", session_id), ());
                                 break;
@@ -148,14 +153,23 @@ impl TerminalManager {
                             drop(channel);
                             log::warn!(
                                 target: "myterm::terminal",
-                                "reader read error session_id={}",
-                                session_id
+                                "reader read error session_id={} connection_id={}",
+                                session_id,
+                                connection_id
                             );
+                            running.store(false, Ordering::SeqCst);
+                            sessions_for_reader.lock().remove(&session_id);
                             let _ = app_handle.emit(&format!("terminal-exit-{}", session_id), ());
                             break;
                         }
                     }
                 }
+                log::debug!(
+                    target: "myterm::terminal",
+                    "reader stopped session_id={} connection_id={}",
+                    session_id,
+                    connection_id
+                );
             });
 
             Ok(())

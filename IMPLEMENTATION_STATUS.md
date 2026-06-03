@@ -14,6 +14,7 @@ MyTerm 当前按 SSH-first 桌面管理器推进，优先保证 SSH 连接、终
 - 侧边栏与连接中心均可打开 SSH 终端、SFTP 和监控 tab。
 - tab 类型按 `terminal` / `sftp` / `monitor` 路由到真实视图。
 - 终端 tab 切换不再触发 SSH 断开；关闭 tab 才释放 session。
+- 终端 reader 收到 EOF 或读错误时会清理后端 session，并同步清空前端 tab 的 `sessionId`，避免重新附着到已断开的会话。
 - 终端输入、resize、连接和断开通过统一 Tauri 封装调用。
 - SSH 认证支持密码、指定私钥路径、ssh-agent，以及默认私钥 `~/.ssh/id_ed25519` / `~/.ssh/id_rsa` 等。
 - HTTP CONNECT 和 SOCKS5 出站代理已接入共享 SSH 连接层，连接测试、终端、SFTP 和监控辅助 SSH 会话走同一传输逻辑。
