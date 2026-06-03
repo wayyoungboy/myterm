@@ -298,6 +298,7 @@ export function MonitorView() {
   const [sessionLoading, setSessionLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectStartedRef = useRef(false);
+  const fetchingRef = useRef(false);
 
   useEffect(() => {
     if (sessionId || !activeTab?.connectionId || connectStartedRef.current) return;
@@ -319,12 +320,16 @@ export function MonitorView() {
 
   const fetchData = useCallback(async () => {
     if (!sessionId) return;
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
       const result = await getMonitorData(sessionId);
       setData(result);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch monitor data');
+    } finally {
+      fetchingRef.current = false;
     }
   }, [sessionId]);
 
@@ -332,6 +337,7 @@ export function MonitorView() {
     if (!sessionId) {
       setData(null);
       setError(null);
+      fetchingRef.current = false;
       return;
     }
 
@@ -343,6 +349,7 @@ export function MonitorView() {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      fetchingRef.current = false;
     };
   }, [sessionId, fetchData]);
 

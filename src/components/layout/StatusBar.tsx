@@ -17,15 +17,19 @@ export function StatusBar() {
 
   // Listen for connect/disconnect events
   useEffect(() => {
+    let cancelled = false;
     const unlisten1 = listen<string>('terminal-connected', (event) => {
+      if (cancelled) return;
       const tabId = event.payload;
       setConnectedMap((prev) => ({ ...prev, [tabId]: true }));
     });
     const unlisten2 = listen<string>('terminal-disconnected', (event) => {
+      if (cancelled) return;
       const tabId = event.payload;
       setConnectedMap((prev) => ({ ...prev, [tabId]: false }));
     });
     return () => {
+      cancelled = true;
       unlisten1.then((fn) => fn());
       unlisten2.then((fn) => fn());
     };

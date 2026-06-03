@@ -48,6 +48,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   const fitAddon = useRef<FitAddon | null>(null);
   const unlistenOutput = useRef<(() => void) | null>(null);
   const unlistenExit = useRef<(() => void) | null>(null);
+  const ioVersionRef = useRef(0);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -62,14 +63,20 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   const [formKeyPath, setFormKeyPath] = useState('');
   const [formAuthType, setFormAuthType] = useState<AuthType>('password');
 
-  // Cleanup frontend listeners on unmount. The tab close handler owns SSH disconnects.
-  useEffect(() => {
-    return () => {
-      unlistenOutput.current?.();
-      unlistenExit.current?.();
-      onDataDisposable.current?.();
-    };
+  const onDataDisposable = useRef<(() => void) | null>(null);
+
+  const cleanupTerminalIO = useCallback(() => {
+    ioVersionRef.current += 1;
+    unlistenOutput.current?.();
+    unlistenOutput.current = null;
+    unlistenExit.current?.();
+    unlistenExit.current = null;
+    onDataDisposable.current?.();
+    onDataDisposable.current = null;
   }, []);
+
+  // Cleanup frontend listeners on unmount. The tab close handler owns SSH disconnects.
+  useEffect(() => cleanupTerminalIO, [cleanupTerminalIO]);
 
   // Initialize xterm.js
   useEffect(() => {
@@ -134,33 +141,41 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     return () => observer.disconnect();
   }, [sessionId]);
 
-  const onDataDisposable = useRef<(() => void) | null>(null);
-
   const setupTerminalIO = useCallback((sid: string) => {
     const term = termInstance.current;
     if (!term) return;
 
-    // Dispose previous onData handler if any
-    onDataDisposable.current?.();
+    cleanupTerminalIO();
+    const ioVersion = ioVersionRef.current;
 
     // Listen for output from SSH channel
     listen<number[]>(`terminal-output-${sid}`, (event) => {
+      if (ioVersionRef.current !== ioVersion) return;
       const data = new Uint8Array(event.payload);
       term.write(data);
     }).then((unlisten) => {
+      if (ioVersionRef.current !== ioVersion) {
+        unlisten();
+        return;
+      }
       unlistenOutput.current = unlisten;
-    });
+    }).catch(() => {});
 
     // Listen for session exit
     listen(`terminal-exit-${sid}`, () => {
+      if (ioVersionRef.current !== ioVersion) return;
       term.writeln('');
       term.writeln('\x1b[38;2;249;226;175m  Session ended.\x1b[0m');
       setSessionId(null);
       const tabId = useAppStore.getState().activeTabId;
       if (tabId) emit('terminal-disconnected', tabId);
     }).then((unlisten) => {
+      if (ioVersionRef.current !== ioVersion) {
+        unlisten();
+        return;
+      }
       unlistenExit.current = unlisten;
-    });
+    }).catch(() => {});
 
     // Send user input to SSH channel - track disposable for cleanup
     const disposable = term.onData((data) => {
@@ -174,7 +189,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
 
     // Focus the terminal
     term.focus();
-  }, []);
+  }, [cleanupTerminalIO]);
 
   const handleConnect = useCallback(
     async (targetConnectionId?: string) => {
@@ -257,8 +272,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   const handleDisconnect = useCallback(async () => {
     if (!sessionId) return;
 
-    unlistenOutput.current?.();
-    unlistenExit.current?.();
+    cleanupTerminalIO();
 
     try {
       await disconnectTerminal(sessionId);
@@ -269,7 +283,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
     if (termInstance.current) {
       termInstance.current.writeln('\x1b[38;2;249;226;175m  Disconnected.\x1b[0m');
     }
-  }, [sessionId]);
+  }, [cleanupTerminalIO, sessionId]);
 
   const showForm = !sessionId && !connectionId;
 

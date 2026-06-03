@@ -25,12 +25,25 @@ export function TelnetView() {
   const fitAddon = useRef<FitAddon | null>(null);
   const unlistenOutput = useRef<(() => void) | null>(null);
   const unlistenExit = useRef<(() => void) | null>(null);
+  const onDataDisposable = useRef<(() => void) | null>(null);
+  const ioVersionRef = useRef(0);
+  const sessionIdRef = useRef<string | null>(null);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formHost, setFormHost] = useState('');
   const [formPort, setFormPort] = useState('23');
+
+  const cleanupTelnetIO = useCallback(() => {
+    ioVersionRef.current += 1;
+    unlistenOutput.current?.();
+    unlistenOutput.current = null;
+    unlistenExit.current?.();
+    unlistenExit.current = null;
+    onDataDisposable.current?.();
+    onDataDisposable.current = null;
+  }, []);
 
   useEffect(() => {
     if (!terminalRef.current || termInstance.current) return;
@@ -45,8 +58,17 @@ export function TelnetView() {
     fit.fit();
     termInstance.current = terminal;
     fitAddon.current = fit;
-    return () => { terminal.dispose(); termInstance.current = null; fitAddon.current = null; };
-  }, []);
+    return () => {
+      cleanupTelnetIO();
+      if (sessionIdRef.current) {
+        disconnectTelnet(sessionIdRef.current).catch(() => {});
+        sessionIdRef.current = null;
+      }
+      terminal.dispose();
+      termInstance.current = null;
+      fitAddon.current = null;
+    };
+  }, [cleanupTelnetIO]);
 
   useEffect(() => {
     const handleResize = () => fitAddon.current?.fit();
@@ -61,35 +83,54 @@ export function TelnetView() {
     try {
       const sid = await connectTelnet(formHost, parseInt(formPort) || 23);
       setSessionId(sid);
+      sessionIdRef.current = sid;
       const term = termInstance.current;
       if (!term) return;
+      cleanupTelnetIO();
+      const ioVersion = ioVersionRef.current;
 
       listen<number[]>(`telnet-output-${sid}`, (event) => {
+        if (ioVersionRef.current !== ioVersion) return;
         term.write(new Uint8Array(event.payload));
-      }).then((unlisten) => { unlistenOutput.current = unlisten; });
+      }).then((unlisten) => {
+        if (ioVersionRef.current !== ioVersion) {
+          unlisten();
+          return;
+        }
+        unlistenOutput.current = unlisten;
+      }).catch(() => {});
 
       listen(`telnet-exit-${sid}`, () => {
+        if (ioVersionRef.current !== ioVersion) return;
         term.writeln('\r\n\x1b[38;2;249;226;175m  Connection closed.\x1b[0m');
         setSessionId(null);
-      }).then((unlisten) => { unlistenExit.current = unlisten; });
+        sessionIdRef.current = null;
+      }).then((unlisten) => {
+        if (ioVersionRef.current !== ioVersion) {
+          unlisten();
+          return;
+        }
+        unlistenExit.current = unlisten;
+      }).catch(() => {});
 
-      term.onData((data) => telnetWrite(sid, data).catch(() => {}));
+      const disposable = term.onData((data) => telnetWrite(sid, data).catch(() => {}));
+      onDataDisposable.current = () => disposable.dispose();
       term.focus();
     } catch (e) {
       setError(String(e));
     } finally {
       setConnecting(false);
     }
-  }, [formHost, formPort]);
+  }, [cleanupTelnetIO, formHost, formPort]);
 
   const handleDisconnect = useCallback(async () => {
     if (!sessionId) return;
-    unlistenOutput.current?.();
-    unlistenExit.current?.();
+    cleanupTelnetIO();
     await disconnectTelnet(sessionId).catch(() => {});
     setSessionId(null);
+    sessionIdRef.current = null;
     termInstance.current?.writeln('\r\n\x1b[38;2;249;226;175m  Disconnected.\x1b[0m');
-  }, [sessionId]);
+  }, [cleanupTelnetIO, sessionId]);
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--bg-primary)' }}>

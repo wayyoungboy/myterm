@@ -399,9 +399,12 @@ export function MonitorSidebar() {
   const historyRef = useRef<HistoryPoint[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fetchingRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     if (!sessionId) return;
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
     try {
       const result = await getMonitorData(sessionId);
       setData(result);
@@ -409,6 +412,9 @@ export function MonitorSidebar() {
       historyRef.current = [...historyRef.current.slice(-MAX_HISTORY + 1), point];
       setHistory([...historyRef.current]);
     } catch { /* ignore */ }
+    finally {
+      fetchingRef.current = false;
+    }
   }, [sessionId]);
 
   useEffect(() => {
@@ -416,12 +422,16 @@ export function MonitorSidebar() {
       setData(null);
       historyRef.current = [];
       setHistory([]);
+      fetchingRef.current = false;
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
       return;
     }
     fetchData();
     intervalRef.current = setInterval(fetchData, 3000);
-    return () => { if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; } };
+    return () => {
+      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+      fetchingRef.current = false;
+    };
   }, [monitorSidebarVisible, sessionId, fetchData]);
 
   const toggleBtn = (
