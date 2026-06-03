@@ -179,7 +179,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [ ] 前端组件拆分（TerminalView/SftpView 继续瘦身）
 - [ ] 单元测试覆盖扩大到命令层和关键 UI 逻辑
 - [ ] Browser/人工 UI 回归清单
-- [ ] 打包发布（DMG/MSI/DEB）
+- [x] macOS arm64 DMG 打包验证
+- [ ] Windows MSI / Linux DEB 打包验证
 
 ---
 

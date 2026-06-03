@@ -70,13 +70,20 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - 默认日志等级为 `info`，可通过 `MYTERM_LOG=debug` 或 `MYTERM_LOG=trace` 提升。
 - 不记录密码、私钥内容或终端输入字节。
 
+### 打包发布
+
+- `npm run tauri -- build` 已验证 release binary 和 macOS `.app` 能成功生成。
+- 当前自动化环境中标准 DMG bundler 会受 Finder AppleScript 超时和临时 `rw.*.dmg` 残留影响；已通过清理临时文件并以 `--skip-jenkins` 运行生成的 `bundle_dmg.sh` 成功产出 macOS arm64 DMG。
+- 已验证 DMG 镜像信息，产物路径为 `src-tauri/target/release/bundle/dmg/myterm-app_0.1.0_aarch64.dmg`。
+- Windows MSI / Linux DEB 尚未在对应平台验证。
+
 ## 验证结果
 
 最近一次验证：
 
 - `npm run build`：通过。
 - `cd src-tauri && cargo check`：通过，当前无 Rust warning。
-- `cd src-tauri && cargo test --lib monitor::tests`：通过，3 个监控解析测试。
+- `cd src-tauri && cargo test`：通过，14 个测试。
 - SSH smoke test：通过，测试服务器返回 `MYTERM_SSH_OK`。
 
 ## 已知遗留

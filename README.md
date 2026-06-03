@@ -81,6 +81,14 @@ cd src-tauri
 cargo test
 ```
 
+macOS package build:
+
+```bash
+npm run tauri -- build
+```
+
+In this automation environment the standard DMG bundler can fail when Finder AppleScript times out. The release binary and `.app` are still produced under `src-tauri/target/release`. A verified fallback is to clean stale `rw.*.dmg` files and run the generated `bundle_dmg.sh` with `--skip-jenkins`; the resulting DMG is written to `src-tauri/target/release/bundle/dmg/`.
+
 Real SSH connectivity smoke test:
 
 ```bash

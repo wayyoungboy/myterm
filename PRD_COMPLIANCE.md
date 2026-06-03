@@ -112,5 +112,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - TypeScript/Vite build 通过。
 - Rust check 通过且无 warning。
-- 监控解析单元测试通过，当前覆盖 3 个测试。
+- Rust 单元测试通过，当前覆盖 14 个测试。
 - 真实 SSH 测试服务器连接通过。
+- macOS arm64 `.app` 和 DMG 产物已生成；Windows MSI / Linux DEB 尚未在对应平台验证。
