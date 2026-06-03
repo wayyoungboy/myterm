@@ -104,11 +104,11 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 目录导航 | ✅ | 路径输入和目录进入 |
 | 上传/下载 | ✅ | 基础文件传输 |
 | 删除/重命名/建目录 | ✅ | 本地和远程均接入 |
-| 本地文件 Tauri 命令 | ✅ | list/write/remove/rename/mkdir |
+| 本地文件 Tauri 命令 | ✅ | list/read/write/remove/rename/mkdir |
 | 远程权限管理 chmod | ✅ | 远程文件/目录支持 3/4 位八进制权限编辑 |
 | 远程文件在线编辑 | ✅ | 支持 1 MB 内 UTF-8 文本文件在线编辑和保存 |
 | 拖拽上传 | ✅ | 本地/远程面板支持拖拽文件和多文件选择上传 |
-| 批量操作 | ⚠️ | 后续增强 |
+| 批量操作 | ✅ | 当前目录多选/全选，支持批量删除、远程文件下载到本地面板、本地文件上传到远程面板 |
 
 ---
 
@@ -170,12 +170,13 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - [x] 应用级文件日志（`myterm.log`）
 - [x] 关键操作追溯 ID（SSH/SFTP/Monitor 等）
+- [x] 本地文件操作日志（list/read/write/remove/rename/mkdir）
 - [ ] 连接断线自动重连
 - [ ] 会话录制与回放
 - [x] HTTP CONNECT / SOCKS5 出站代理
 - [x] 多跳代理连接（ProxyJump 链）
 - [ ] 凭证管理（统一存储、复用）
-- [ ] SFTP 大文件传输进度和取消
+- [ ] SFTP 目录递归复制、大文件字节级进度和取消
 - [ ] 前端组件拆分（TerminalView/SftpView 继续瘦身）
 - [ ] 单元测试覆盖扩大到命令层和关键 UI 逻辑
 - [ ] Browser/人工 UI 回归清单

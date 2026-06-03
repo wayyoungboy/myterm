@@ -40,6 +40,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - 远程文件/目录权限编辑已接入 `chmod`，支持 3/4 位八进制模式并记录到 SFTP 操作日志。
 - 远程文本文件在线编辑已接入，限制为 1 MB 内 UTF-8 文本文件，读取时拒绝明显二进制内容。
 - SFTP 本地/远程面板支持拖拽文件上传和多文件选择上传，目录拖拽暂不展开。
+- SFTP 面板支持当前目录多选/全选、批量删除、远程选中文件下载到本地面板、本地选中文件上传到远程面板。
+- 远程删除已支持目录递归删除；目录递归上传/下载仍保留为增强项。
 
 ### 服务器监控
 
@@ -66,7 +68,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 ### 运行日志
 
 - 应用启动时初始化 `myterm.log`，位于 Tauri app data 目录。
-- 日志覆盖启动、连接配置变更、SSH 连接、断开、SFTP 操作、监控采集和端口转发生命周期。
+- 日志覆盖启动、连接配置变更、SSH 连接、断开、SFTP 操作、本地文件操作、监控采集和端口转发生命周期。
 - 关键操作包含 `op_id`、`session_id` / `connection_id`、目标 host/port、耗时和错误原因，便于追溯。
 - 默认日志等级为 `info`，可通过 `MYTERM_LOG=debug` 或 `MYTERM_LOG=trace` 提升。
 - 不记录密码、私钥内容或终端输入字节。
@@ -84,7 +86,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - `npm run build`：通过。
 - `cd src-tauri && cargo check`：通过，当前无 Rust warning。
-- `cd src-tauri && cargo test`：通过，14 个测试。
+- `cd src-tauri && cargo test`：通过，15 个测试。
 - SSH smoke test：通过，测试服务器返回 `MYTERM_SSH_OK`。
 
 ## 已知遗留
@@ -95,5 +97,5 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，流量统计和真实环境回归仍需补充。
 - Telnet 和 RDP launcher 未做真实环境矩阵验证。
 - AI 未接入真实模型提供方。
-- SFTP 批量删除/下载和大文件传输进度仍是增强项。
+- SFTP 目录递归复制和大文件字节级传输进度/取消仍是增强项。
 - 未进行完整人工 UI 回归；已完成构建、Rust 检查、监控单测和远端 SSH 命令级验证。

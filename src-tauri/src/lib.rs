@@ -102,6 +102,7 @@ pub fn run() {
             commands::local_terminal::close_local_terminal,
             // Local filesystem for SFTP two-pane view
             commands::local_fs::list_local_dir,
+            commands::local_fs::read_local_file,
             commands::local_fs::write_local_file,
             commands::local_fs::remove_local_file,
             commands::local_fs::rename_local_file,

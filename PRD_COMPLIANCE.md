@@ -42,17 +42,17 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | --- | --- | --- |
 | 远程目录列表 | ✅ | `sftp_list_dir` |
 | 远程读写文件 | ✅ | `sftp_read_file` / `sftp_write_file` |
-| 远程删除/重命名/建目录 | ✅ | `sftp_remove_file` / `sftp_rename` / `sftp_mkdir` |
+| 远程删除/重命名/建目录 | ✅ | `sftp_remove_file` 支持文件和目录递归删除，另有 rename / mkdir |
 | SFTP tab 自动建 session | ✅ | `SftpView` 调用 `connectTerminal` |
 | SFTP 独立 SSH 会话 | ✅ | 文件操作使用独立 SSH 连接，避免影响终端 reader |
 | 本地目录列表 | ✅ | `list_local_dir` |
-| 本地写入/删除/重命名/建目录 | ✅ | `local_fs.rs` |
+| 本地读写/删除/重命名/建目录 | ✅ | `local_fs.rs` |
 | 双栏 UI | ✅ | 本地/远程面板 |
 | 上传/下载 | ✅ | 基础文件上传和下载已接入 |
 | 权限编辑 | ✅ | 远程文件/目录支持 octal chmod |
 | 远程文件在线编辑 | ✅ | 1 MB 内 UTF-8 文本文件支持在线编辑和保存 |
 | 拖拽上传 | ✅ | 本地/远程面板支持拖拽文件和多文件选择上传 |
-| 批量操作 | ⚠️ | 增强项 |
+| 批量操作 | ✅ | 当前目录多选/全选，支持批量删除、远程文件下载到本地面板、本地文件上传到远程面板 |
 
 ## 服务器监控
 
@@ -93,7 +93,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | --- | --- | --- |
 | 文件日志 | ✅ | `myterm.log` 写入 Tauri app data 目录 |
 | 操作关联 ID | ✅ | SSH/SFTP/Monitor 等关键操作带 `op_id` |
-| 生命周期日志 | ✅ | 启动、连接 CRUD、SSH connect/disconnect、SFTP、Monitor、Port Forward |
+| 生命周期日志 | ✅ | 启动、连接 CRUD、SSH connect/disconnect、SFTP、本地文件操作、Monitor、Port Forward |
 | 敏感信息保护 | ✅ | 不记录密码、私钥内容、终端输入字节 |
 | 可调日志等级 | ✅ | `MYTERM_LOG=debug/trace` |
 
@@ -112,6 +112,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - TypeScript/Vite build 通过。
 - Rust check 通过且无 warning。
-- Rust 单元测试通过，当前覆盖 14 个测试。
+- Rust 单元测试通过，当前覆盖 15 个测试。
 - 真实 SSH 测试服务器连接通过。
 - macOS arm64 `.app` 和 DMG 产物已生成；Windows MSI / Linux DEB 尚未在对应平台验证。

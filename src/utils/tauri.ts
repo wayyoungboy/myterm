@@ -59,6 +59,8 @@ export const sftpChmod = (sessionId: string, path: string, mode: string) =>
 // Local filesystem for SFTP two-pane view
 export const listLocalDir = (path: string) =>
   invoke<SftpEntry[]>('list_local_dir', { path });
+export const readLocalFile = (path: string) =>
+  invoke<number[]>('read_local_file', { path });
 export const writeLocalFile = (path: string, data: number[]) =>
   invoke('write_local_file', { path, data });
 export const removeLocalFile = (path: string) =>

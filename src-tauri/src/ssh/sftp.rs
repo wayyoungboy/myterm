@@ -1,5 +1,6 @@
 use crate::db::models::SftpEntry;
-use ssh2::{FileStat, Session};
+use ssh2::{FileStat, Session, Sftp};
+use std::path::Path;
 
 pub fn list_dir(session: &Session, path: &str) -> Result<Vec<SftpEntry>, String> {
     let sftp = session
@@ -88,9 +89,39 @@ pub fn remove_file(session: &Session, path: &str) -> Result<(), String> {
     let sftp = session
         .sftp()
         .map_err(|e| format!("SFTP init failed: {}", e))?;
-    sftp.unlink(std::path::Path::new(path))
-        .map_err(|e| format!("Remove failed: {}", e))?;
-    Ok(())
+    remove_path(&sftp, Path::new(path))
+}
+
+fn remove_path(sftp: &Sftp, path: &Path) -> Result<(), String> {
+    let stat = sftp
+        .stat(path)
+        .map_err(|e| format!("Stat before remove failed for {}: {}", path.display(), e))?;
+
+    if stat.is_dir() {
+        let entries = sftp.readdir(path).map_err(|e| {
+            format!(
+                "Read dir before remove failed for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+
+        for (child_path, _) in entries {
+            let Some(name) = child_path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if name == "." || name == ".." {
+                continue;
+            }
+            remove_path(sftp, &child_path)?;
+        }
+
+        sftp.rmdir(path)
+            .map_err(|e| format!("Remove dir failed for {}: {}", path.display(), e))
+    } else {
+        sftp.unlink(path)
+            .map_err(|e| format!("Remove file failed for {}: {}", path.display(), e))
+    }
 }
 
 pub fn rename(session: &Session, src: &str, dst: &str) -> Result<(), String> {

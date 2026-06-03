@@ -24,6 +24,7 @@ import {
   sftpChmod,
   connectTerminal,
   listLocalDir,
+  readLocalFile,
   writeLocalFile,
   removeLocalFile,
   renameLocalFile,
@@ -124,6 +125,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   const [localEntries, setLocalEntries] = useState<SftpEntry[]>([]);
   const [localLoading, setLocalLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [remoteSelection, setRemoteSelection] = useState<Set<string>>(new Set());
+  const [localSelection, setLocalSelection] = useState<Set<string>>(new Set());
 
   // Context menu
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState>(initialCtx);
@@ -142,6 +145,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
 
   // Loading overlay for upload/download
   const [transferLoading, setTransferLoading] = useState(false);
+  const [transferMessage, setTransferMessage] = useState('Transferring...');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadSide, setUploadSide] = useState<PanelSide>('remote');
@@ -172,6 +176,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
       if (!sessionId) return;
       setRemoteLoading(true);
       setRemoteError(null);
+      setRemoteSelection(new Set());
       try {
         const list = await sftpListDir(sessionId, p);
         setRemoteEntries(sortEntries(list));
@@ -190,6 +195,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   const loadLocal = useCallback(async (p: string) => {
     setLocalLoading(true);
     setLocalError(null);
+    setLocalSelection(new Set());
     try {
       const list = await listLocalDir(p);
       setLocalEntries(sortEntries(list));
@@ -219,6 +225,42 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     window.addEventListener('click', close);
     return () => window.removeEventListener('click', close);
   }, [ctxMenu.visible]);
+
+  const getSelection = (side: PanelSide): Set<string> =>
+    side === 'remote' ? remoteSelection : localSelection;
+
+  const setSelection = (side: PanelSide, update: (prev: Set<string>) => Set<string>) => {
+    if (side === 'remote') {
+      setRemoteSelection(update);
+    } else {
+      setLocalSelection(update);
+    }
+  };
+
+  const clearSelection = (side: PanelSide) => {
+    setSelection(side, () => new Set());
+  };
+
+  const selectedEntries = (side: PanelSide, entries: SftpEntry[]): SftpEntry[] => {
+    const selected = getSelection(side);
+    return entries.filter((entry) => selected.has(entry.path));
+  };
+
+  const toggleSelection = (side: PanelSide, path: string) => {
+    setSelection(side, (prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllSelection = (side: PanelSide, entries: SftpEntry[], checked: boolean) => {
+    setSelection(side, () => new Set(checked ? entries.map((entry) => entry.path) : []));
+  };
 
   // ---- navigation ----
 
@@ -264,6 +306,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     if (!entry || entry.is_dir || ctxSide !== 'remote') return;
     setCtxMenu(initialCtx);
     setTransferLoading(true);
+    setTransferMessage(`Downloading ${entry.name}`);
     try {
       const data = await sftpReadFile(sessionId, entry.path);
       const uint8 = new Uint8Array(data);
@@ -276,6 +319,105 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
       URL.revokeObjectURL(url);
     } catch (e: any) {
       alert('Download failed: ' + (e?.toString?.() ?? e));
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  const copyRemoteFilesToLocal = async (entries: SftpEntry[]) => {
+    const files = entries.filter((entry) => !entry.is_dir);
+    if (files.length === 0) {
+      alert('Only files can be downloaded to the local panel.');
+      return;
+    }
+    if (!sessionId) {
+      alert('No SSH session available.');
+      return;
+    }
+
+    setCtxMenu(initialCtx);
+    setTransferLoading(true);
+    try {
+      for (const [index, entry] of files.entries()) {
+        setTransferMessage(`Downloading ${index + 1}/${files.length}: ${entry.name}`);
+        const data = await sftpReadFile(sessionId, entry.path);
+        await writeLocalFile(joinPath(localPath, entry.name), data);
+      }
+      await loadLocal(localPath);
+      clearSelection('remote');
+      const skipped = entries.length - files.length;
+      if (skipped > 0) {
+        alert(`${skipped} directories were skipped. Directory download is not supported yet.`);
+      }
+    } catch (e: any) {
+      alert('Download failed: ' + (e?.toString?.() ?? e));
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  const copyLocalFilesToRemote = async (entries: SftpEntry[]) => {
+    const files = entries.filter((entry) => !entry.is_dir);
+    if (files.length === 0) {
+      alert('Only files can be uploaded to the remote panel.');
+      return;
+    }
+    if (!sessionId) {
+      alert('No SSH session available.');
+      return;
+    }
+
+    setCtxMenu(initialCtx);
+    setTransferLoading(true);
+    try {
+      for (const [index, entry] of files.entries()) {
+        setTransferMessage(`Uploading ${index + 1}/${files.length}: ${entry.name}`);
+        const data = await readLocalFile(entry.path);
+        await sftpWriteFile(sessionId, joinPath(remotePath, entry.name), data);
+      }
+      await loadRemote(remotePath);
+      clearSelection('local');
+      const skipped = entries.length - files.length;
+      if (skipped > 0) {
+        alert(`${skipped} directories were skipped. Directory upload is not supported yet.`);
+      }
+    } catch (e: any) {
+      alert('Upload failed: ' + (e?.toString?.() ?? e));
+    } finally {
+      setTransferLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async (side: PanelSide, entries: SftpEntry[]) => {
+    const targets = selectedEntries(side, entries);
+    if (targets.length === 0) return;
+    const ok = window.confirm(`Delete ${targets.length} selected item${targets.length > 1 ? 's' : ''}?`);
+    if (!ok) return;
+    if (side === 'remote' && !sessionId) {
+      alert('No SSH session available.');
+      return;
+    }
+
+    setCtxMenu(initialCtx);
+    setTransferLoading(true);
+    try {
+      for (const [index, entry] of targets.entries()) {
+        setTransferMessage(`Deleting ${index + 1}/${targets.length}: ${entry.name}`);
+        if (side === 'remote') {
+          await sftpRemoveFile(sessionId, entry.path);
+        } else {
+          await removeLocalFile(entry.path);
+        }
+      }
+
+      if (side === 'remote') {
+        await loadRemote(remotePath);
+      } else {
+        await loadLocal(localPath);
+      }
+      clearSelection(side);
+    } catch (e: any) {
+      alert('Delete failed: ' + (e?.toString?.() ?? e));
     } finally {
       setTransferLoading(false);
     }
@@ -296,7 +438,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
 
     setTransferLoading(true);
     try {
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
+        setTransferMessage(`Uploading ${index + 1}/${files.length}: ${file.name}`);
         const buffer = await file.arrayBuffer();
         const data = Array.from(new Uint8Array(buffer));
 
@@ -366,9 +509,16 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     const entry = ctxMenu.entry;
     if (!entry) return;
     setCtxMenu(initialCtx);
-    
+    const ok = window.confirm(`Delete ${entry.name}?`);
+    if (!ok) return;
+    if (ctxSide === 'remote' && !sessionId) {
+      alert('No SSH session available.');
+      return;
+    }
+    setTransferLoading(true);
 
     try {
+      setTransferMessage(`Deleting ${entry.name}`);
       if (ctxSide === 'remote') {
         await sftpRemoveFile(sessionId, entry.path);
         await loadRemote(remotePath);
@@ -378,6 +528,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
       }
     } catch (e: any) {
       alert('Delete failed: ' + (e?.toString?.() ?? e));
+    } finally {
+      setTransferLoading(false);
     }
   };
 
@@ -552,8 +704,15 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     onNavigate: (entry: SftpEntry) => void;
     onGoUp: () => void;
     onRefresh: () => void;
-  }) => (
-    <div
+  }) => {
+    const selection = getSelection(side);
+    const currentSelectedEntries = selectedEntries(side, entries);
+    const selectedCount = currentSelectedEntries.length;
+    const selectedFileCount = currentSelectedEntries.filter((entry) => !entry.is_dir).length;
+    const allSelected = entries.length > 0 && selectedCount === entries.length;
+
+    return (
+      <div
       className={`flex flex-col flex-1 min-w-0 border rounded-lg overflow-hidden transition-colors ${
         dragOverSide === side ? 'border-[var(--accent)] bg-[var(--bg-surface)]' : 'border-[var(--border)]'
       }`}
@@ -604,6 +763,52 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         <Breadcrumb path={currentPath} onNavigate={(p) => { side === 'remote' ? loadRemote(p) : loadLocal(p); }} />
       </div>
 
+      {selectedCount > 0 && (
+        <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[var(--bg-secondary)] border-b border-[var(--border)]">
+          <span className="text-xs text-[var(--text-secondary)]">
+            {selectedCount} selected
+          </span>
+          <div className="flex items-center gap-1">
+            {side === 'remote' ? (
+              <button
+                className="btn btn-ghost p-1"
+                title="Download selected files to local panel"
+                disabled={selectedFileCount === 0 || !sessionId}
+                onClick={() => copyRemoteFilesToLocal(currentSelectedEntries)}
+              >
+                <Download size={14} />
+                <span className="hidden xl:inline">Download</span>
+              </button>
+            ) : (
+              <button
+                className="btn btn-ghost p-1"
+                title="Upload selected files to remote panel"
+                disabled={selectedFileCount === 0 || !sessionId}
+                onClick={() => copyLocalFilesToRemote(currentSelectedEntries)}
+              >
+                <Upload size={14} />
+                <span className="hidden xl:inline">Upload</span>
+              </button>
+            )}
+            <button
+              className="btn btn-ghost p-1 text-[var(--error)]"
+              title="Delete selected items"
+              onClick={() => handleBulkDelete(side, entries)}
+            >
+              <Trash2 size={14} />
+              <span className="hidden xl:inline">Delete</span>
+            </button>
+            <button
+              className="btn btn-ghost px-2 py-1"
+              title="Clear selection"
+              onClick={() => clearSelection(side)}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* File list */}
       <div
         className="flex-1 overflow-y-auto relative"
@@ -626,8 +831,18 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         )}
         {/* Table header */}
         <div className="grid gap-2 px-3 py-1 text-xs text-[var(--text-muted)] border-b border-[var(--border)] bg-[var(--bg-secondary)] sticky top-0"
-          style={{ gridTemplateColumns: '1fr 80px 100px 130px' }}
+          style={{ gridTemplateColumns: '28px minmax(0, 1fr) 80px 100px 130px' }}
         >
+          <span className="flex justify-center">
+            <input
+              type="checkbox"
+              aria-label={`Select all ${title.toLowerCase()} entries`}
+              checked={allSelected}
+              disabled={entries.length === 0}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => toggleAllSelection(side, entries, e.currentTarget.checked)}
+            />
+          </span>
           <span>Name</span>
           <span className="text-right">Size</span>
           <span>Permissions</span>
@@ -637,11 +852,22 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         {entries.map((entry) => (
           <div
             key={entry.path}
-            className="grid gap-2 px-3 py-1 text-xs cursor-pointer hover:bg-[var(--bg-surface)] transition-colors items-center"
-            style={{ gridTemplateColumns: '1fr 80px 100px 130px' }}
+            className={`grid gap-2 px-3 py-1 text-xs cursor-pointer hover:bg-[var(--bg-surface)] transition-colors items-center ${
+              selection.has(entry.path) ? 'bg-[var(--bg-surface)]' : ''
+            }`}
+            style={{ gridTemplateColumns: '28px minmax(0, 1fr) 80px 100px 130px' }}
             onDoubleClick={() => onNavigate(entry)}
             onContextMenu={(e) => openCtx(e, side, entry)}
           >
+            <span className="flex justify-center">
+              <input
+                type="checkbox"
+                aria-label={`Select ${entry.name}`}
+                checked={selection.has(entry.path)}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => toggleSelection(side, entry.path)}
+              />
+            </span>
             <span className="flex items-center gap-2 min-w-0">
               {entry.is_dir ? (
                 <Folder size={14} className="text-[var(--warning)] shrink-0" />
@@ -670,11 +896,12 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
 
       {/* Status bar */}
       <div className="status-bar">
-        <span>{entries.length} items</span>
+        <span>{entries.length} items{selectedCount > 0 ? `, ${selectedCount} selected` : ''}</span>
         <span className="truncate ml-2">{currentPath}</span>
       </div>
-    </div>
-  );
+      </div>
+    );
+  };
 
   // ---- main render ----
 
@@ -685,7 +912,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--bg-primary)]/70 backdrop-blur-sm">
           <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] shadow-lg">
             <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
-            <span className="text-sm">Transferring...</span>
+            <span className="text-sm">{transferMessage}</span>
           </div>
         </div>
       )}

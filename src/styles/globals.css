@@ -131,6 +131,19 @@ html, body, #root {
   color: var(--text-primary);
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary:disabled:hover { background: var(--accent); }
+.btn-secondary:disabled:hover { background: var(--bg-surface); }
+.btn-danger:disabled:hover { background: var(--error); }
+.btn-ghost:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
 /* Inputs */
 .input {
   padding: 6px 10px;
