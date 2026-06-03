@@ -1,10 +1,21 @@
-use super::SshSession;
+use super::{SshSession, SshTransport};
+#[cfg(unix)]
+use ssh2::Channel;
 use ssh2::Session;
 use std::io::{Read, Write};
 use std::net::{IpAddr, TcpStream};
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(unix)]
+use std::sync::Arc;
+#[cfg(unix)]
+use std::thread;
 use std::time::Duration;
 
+#[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct SshConnectParams {
     pub host: String,
@@ -18,6 +29,7 @@ pub struct SshConnectParams {
     pub proxy_host: Option<String>,
     pub proxy_port: Option<u16>,
     pub proxy_jump_id: Option<String>,
+    pub proxy_jump: Option<Box<SshConnectParams>>,
     pub init_command: Option<String>,
     pub init_path: Option<String>,
     pub heartbeat_ms: Option<i32>,
@@ -45,29 +57,7 @@ fn connect_direct(host: &str, port: u16, timeout_ms: u32) -> Result<TcpStream, S
 }
 
 fn connect_transport(params: &SshConnectParams, timeout_ms: u32) -> Result<TcpStream, String> {
-    let proxy_type = params
-        .proxy_type
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("none"));
-
-    if let Some(proxy_jump_id) = params
-        .proxy_jump_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        log::warn!(
-            target: "myterm::ssh",
-            "proxy jump requested but unsupported proxy_jump_id={} target={}:{}",
-            proxy_jump_id,
-            params.host,
-            params.port
-        );
-        return Err("ProxyJump SSH tunneling is not implemented yet".to_string());
-    }
-
-    match proxy_type.map(|value| value.to_ascii_lowercase()) {
+    match proxy_kind(params) {
         None => connect_direct(&params.host, params.port, timeout_ms),
         Some(kind) if kind == "http" || kind == "https" => connect_http_proxy(params, timeout_ms),
         Some(kind) if kind == "socks5" || kind == "socks" => {
@@ -75,6 +65,15 @@ fn connect_transport(params: &SshConnectParams, timeout_ms: u32) -> Result<TcpSt
         }
         Some(kind) => Err(format!("Unsupported SSH proxy type: {}", kind)),
     }
+}
+
+fn proxy_kind(params: &SshConnectParams) -> Option<String> {
+    params
+        .proxy_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("none"))
+        .map(|value| value.to_ascii_lowercase())
 }
 
 fn proxy_endpoint(params: &SshConnectParams) -> Result<(&str, u16), String> {
@@ -479,6 +478,10 @@ fn expand_home(path: &str) -> PathBuf {
 pub fn connect(params: &SshConnectParams) -> Result<SshSession, String> {
     let timeout_ms = params.timeout_ms.unwrap_or(10000);
 
+    if proxy_kind(params).is_none() && params.proxy_jump.is_some() {
+        return connect_via_jump(params, timeout_ms);
+    }
+
     let tcp = connect_transport(params, timeout_ms)?;
 
     let mut session = Session::new().map_err(|e| format!("Session creation failed: {}", e))?;
@@ -491,33 +494,141 @@ pub fn connect(params: &SshConnectParams) -> Result<SshSession, String> {
         .handshake()
         .map_err(|e| format!("SSH handshake failed: {}", e))?;
 
-    // Set keepalive to prevent idle disconnects
-    let heartbeat_secs = params.heartbeat_ms.unwrap_or(5000) / 1000;
-    session.set_keepalive(true, heartbeat_secs as u32);
-
-    auth_session(&session, params)?;
+    configure_authenticated_session(&session, params)?;
 
     Ok(SshSession {
         session,
-        _stream: tcp,
+        _transport: SshTransport::Tcp { _stream: tcp },
     })
 }
 
-#[allow(dead_code)]
-pub fn connect_through_jump(
-    jump_session: &Session,
-    target_host: &str,
-    target_port: u16,
-) -> Result<TcpStream, String> {
-    // Open a direct-tcpip channel through the jump host to the target
-    let _channel = jump_session
-        .channel_direct_tcpip(target_host, target_port, None)
-        .map_err(|e| format!("Jump tunnel failed: {}", e))?;
+fn configure_authenticated_session(
+    session: &Session,
+    params: &SshConnectParams,
+) -> Result<(), String> {
+    let heartbeat_secs = params.heartbeat_ms.unwrap_or(5000) / 1000;
+    session.set_keepalive(true, heartbeat_secs as u32);
+    auth_session(session, params)
+}
 
-    // Create a TcpStream-like wrapper from the channel
-    // For simplicity, we'll use the jump session's TCP stream
-    // In production, this should properly tunnel through the channel
-    Err("ProxyJump tunneling requires custom stream wrapper - not yet implemented".to_string())
+#[cfg(not(unix))]
+fn connect_via_jump(_params: &SshConnectParams, _timeout_ms: u32) -> Result<SshSession, String> {
+    Err("ProxyJump is only implemented on Unix-like platforms".to_string())
+}
+
+#[cfg(unix)]
+fn connect_via_jump(params: &SshConnectParams, timeout_ms: u32) -> Result<SshSession, String> {
+    let jump_params = params
+        .proxy_jump
+        .as_ref()
+        .ok_or_else(|| "ProxyJump params are missing".to_string())?;
+    log::info!(
+        target: "myterm::ssh",
+        "ssh proxyjump start jump_host={} jump_port={} target={}:{}",
+        jump_params.host,
+        jump_params.port,
+        params.host,
+        params.port
+    );
+
+    let jump = connect(jump_params)?;
+    let channel = jump
+        .session
+        .channel_direct_tcpip(&params.host, params.port, None)
+        .map_err(|e| format!("ProxyJump direct-tcpip failed: {}", e))?;
+
+    let timeout = Duration::from_millis(timeout_ms as u64);
+    let (session_stream, bridge_stream) =
+        UnixStream::pair().map_err(|e| format!("ProxyJump local bridge failed: {}", e))?;
+    session_stream.set_read_timeout(Some(timeout)).ok();
+    session_stream.set_write_timeout(Some(timeout)).ok();
+
+    let running = Arc::new(AtomicBool::new(true));
+    let threads = start_jump_bridge(channel, bridge_stream, running.clone())?;
+
+    let mut session = Session::new().map_err(|e| format!("Session creation failed: {}", e))?;
+    session.set_tcp_stream(
+        session_stream
+            .try_clone()
+            .map_err(|e| format!("ProxyJump stream clone failed: {}", e))?,
+    );
+    session
+        .handshake()
+        .map_err(|e| format!("SSH handshake failed through ProxyJump: {}", e))?;
+    configure_authenticated_session(&session, params)?;
+
+    log::info!(
+        target: "myterm::ssh",
+        "ssh proxyjump connected jump_host={} jump_port={} target={}:{}",
+        jump_params.host,
+        jump_params.port,
+        params.host,
+        params.port
+    );
+
+    Ok(SshSession {
+        session,
+        _transport: SshTransport::Jump {
+            _stream: session_stream,
+            _jump: Box::new(jump),
+            running,
+            _threads: threads,
+        },
+    })
+}
+
+#[cfg(unix)]
+fn start_jump_bridge(
+    channel: Channel,
+    stream: UnixStream,
+    running: Arc<AtomicBool>,
+) -> Result<Vec<thread::JoinHandle<()>>, String> {
+    let mut local_reader = stream
+        .try_clone()
+        .map_err(|e| format!("ProxyJump local stream clone failed: {}", e))?;
+    let mut local_writer = stream;
+    let mut channel_writer = channel.clone();
+    let mut channel_reader = channel;
+
+    let running_to_remote = running.clone();
+    let to_remote = thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        while running_to_remote.load(Ordering::SeqCst) {
+            match local_reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if channel_writer.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                    let _ = channel_writer.flush();
+                }
+                Err(_) => break,
+            }
+        }
+        running_to_remote.store(false, Ordering::SeqCst);
+        let _ = channel_writer.close();
+    });
+
+    let running_to_local = running.clone();
+    let to_local = thread::spawn(move || {
+        let mut buf = [0u8; 8192];
+        while running_to_local.load(Ordering::SeqCst) {
+            match channel_reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    if local_writer.write_all(&buf[..n]).is_err() {
+                        break;
+                    }
+                    let _ = local_writer.flush();
+                }
+                Err(_) => break,
+            }
+        }
+        running_to_local.store(false, Ordering::SeqCst);
+        let _ = local_writer.shutdown(std::net::Shutdown::Both);
+    });
+
+    Ok(vec![to_remote, to_local])
 }
 
 #[allow(dead_code)]

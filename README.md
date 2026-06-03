@@ -8,6 +8,7 @@ MyTerm is a Tauri + React desktop SSH manager with XTerminal-inspired workflows.
 - Server monitoring launched from an active terminal tab, using independent SSH sessions for monitor collection.
 - SSH authentication with password, explicit private key path, ssh-agent, or default private keys such as `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`.
 - SSH outbound proxy support for HTTP CONNECT and SOCKS5.
+- SSH ProxyJump on Unix-like platforms through an SSH `direct-tcpip` tunnel.
 
 Additional tool views are available in the app shell:
 
@@ -52,7 +53,7 @@ The app does not need to listen on a public port for normal SSH terminal, SFTP, 
 
 ## Logs
 
-The desktop app writes runtime logs to the Tauri app data directory as `myterm.log`. The log includes startup, connection CRUD, SSH connect/disconnect, SSH outbound proxy setup, SFTP operations, monitor fetches, and port-forward lifecycle events with operation IDs and elapsed times.
+The desktop app writes runtime logs to the Tauri app data directory as `myterm.log`. The log includes startup, connection CRUD, SSH connect/disconnect, SSH outbound proxy and ProxyJump setup, SFTP operations, monitor fetches, and port-forward lifecycle events with operation IDs and elapsed times.
 
 Default level is `info`. Use `MYTERM_LOG=debug` or `MYTERM_LOG=trace` before launching the app when deeper troubleshooting is needed.
 

@@ -3,8 +3,25 @@ use crate::db::DbConn;
 use crate::ssh::connection::{connect, SshConnectParams};
 use crate::ssh::SshSession;
 use crate::terminal::TerminalManager;
+use std::collections::HashSet;
 
 pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectParams, String> {
+    let mut seen = HashSet::new();
+    load_ssh_params_inner(db, connection_id, &mut seen)
+}
+
+fn load_ssh_params_inner(
+    db: &DbConn,
+    connection_id: &str,
+    seen: &mut HashSet<String>,
+) -> Result<SshConnectParams, String> {
+    if !seen.insert(connection_id.to_string()) {
+        return Err(format!(
+            "ProxyJump cycle detected at connection {}",
+            connection_id
+        ));
+    }
+
     let (
         host,
         port,
@@ -49,6 +66,12 @@ pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectPar
         .map_err(|e| format!("Connection not found: {}", e))?
     };
 
+    let proxy_jump = match proxy_jump_id.as_deref().filter(|id| !id.trim().is_empty()) {
+        Some(jump_id) => Some(Box::new(load_ssh_params_inner(db, jump_id, seen)?)),
+        None => None,
+    };
+    seen.remove(connection_id);
+
     let password = password_enc
         .as_deref()
         .filter(|enc| !enc.is_empty())
@@ -66,6 +89,7 @@ pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectPar
         proxy_host,
         proxy_port: proxy_port.and_then(|port| u16::try_from(port).ok()),
         proxy_jump_id,
+        proxy_jump,
         init_command,
         init_path,
         heartbeat_ms,
@@ -165,5 +189,73 @@ mod tests {
         assert_eq!(params.proxy_port, Some(1080));
         assert_eq!(params.proxy_jump_id.as_deref(), Some("jump-1"));
         assert_eq!(params.heartbeat_ms, Some(7000));
+    }
+
+    #[test]
+    fn loads_nested_proxy_jump_params() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_db(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["jump-1", "Jump", "jump.example", 2222, "key", "jumper"],
+        )
+        .expect("insert jump");
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username, proxy_jump_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                "target-1",
+                "Target",
+                "target.example",
+                22,
+                "key",
+                "tester",
+                "jump-1"
+            ],
+        )
+        .expect("insert target");
+        let db = DbConn(Mutex::new(conn));
+
+        let params = load_ssh_params(&db, "target-1").expect("params");
+        let jump = params.proxy_jump.as_ref().expect("jump params");
+
+        assert_eq!(params.proxy_jump_id.as_deref(), Some("jump-1"));
+        assert_eq!(jump.host, "jump.example");
+        assert_eq!(jump.port, 2222);
+        assert_eq!(jump.username, "jumper");
+    }
+
+    #[test]
+    fn rejects_proxy_jump_cycles() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_db(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["a", "A", "a.example", 22, "key", "auser"],
+        )
+        .expect("insert a");
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["b", "B", "b.example", 22, "key", "buser"],
+        )
+        .expect("insert b");
+        conn.execute(
+            "UPDATE connections SET proxy_jump_id = ?1 WHERE id = ?2",
+            rusqlite::params!["b", "a"],
+        )
+        .expect("link a");
+        conn.execute(
+            "UPDATE connections SET proxy_jump_id = ?1 WHERE id = ?2",
+            rusqlite::params!["a", "b"],
+        )
+        .expect("link b");
+        let db = DbConn(Mutex::new(conn));
+
+        let err = load_ssh_params(&db, "a").expect_err("cycle must fail");
+
+        assert!(err.contains("ProxyJump cycle"));
     }
 }

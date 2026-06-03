@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { createConnection, updateConnection, testConnection, getGroups } from '../../utils/tauri';
-import type { ConnectionInput, Group } from '../../types';
+import { createConnection, updateConnection, testConnection, getGroups, getConnections } from '../../utils/tauri';
+import type { Connection, ConnectionInput, Group } from '../../types';
 import { X, TestTube, Save, Key, Lock, Server, Link, Globe, Settings } from 'lucide-react';
 
 interface Props {
@@ -31,6 +31,7 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
     ...initialData,
   });
   const [groups, setGroups] = useState<Group[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
   const [activeTab, setActiveTab] = useState<TabId>('basic');
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,6 +40,7 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
 
   useEffect(() => {
     getGroups().then(setGroups).catch((e) => console.error('Failed to load groups:', e));
+    getConnections().then(setConnections).catch((e) => console.error('Failed to load connections:', e));
   }, []);
 
   const handleChange = (field: keyof ConnectionInput, value: any) => {
@@ -53,6 +55,17 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
       proxy_host: value === 'none' ? undefined : prev.proxy_host,
       proxy_port: value === 'none' ? undefined : (prev.proxy_port || (value === 'http' ? 8080 : 1080)),
       proxy_jump_id: undefined,
+    }));
+    setTestResult(null);
+  };
+
+  const handleProxyJumpChange = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      proxy_jump_id: value || undefined,
+      proxy_type: value ? undefined : prev.proxy_type,
+      proxy_host: value ? undefined : prev.proxy_host,
+      proxy_port: value ? undefined : prev.proxy_port,
     }));
     setTestResult(null);
   };
@@ -216,12 +229,32 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
     <div className="flex flex-col gap-4">
       <div>
         <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+          跳板机
+        </label>
+        <select
+          className="select"
+          value={form.proxy_jump_id || ''}
+          onChange={(e) => handleProxyJumpChange(e.target.value)}
+        >
+          <option value="">不使用跳板机</option>
+          {connections
+            .filter((conn) => conn.id !== connectionId)
+            .map((conn) => (
+              <option key={conn.id} value={conn.id}>
+                {conn.name} ({conn.username || 'root'}@{conn.host}:{conn.port})
+              </option>
+            ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
           代理类型
         </label>
         <select
           className="select"
           value={form.proxy_type || 'none'}
           onChange={(e) => handleProxyTypeChange(e.target.value)}
+          disabled={Boolean(form.proxy_jump_id)}
         >
           <option value="none">不使用代理</option>
           <option value="http">HTTP CONNECT</option>
@@ -238,7 +271,7 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
             value={form.proxy_host || ''}
             onChange={(e) => handleChange('proxy_host', e.target.value)}
             placeholder="127.0.0.1"
-            disabled={!form.proxy_type || form.proxy_type === 'none'}
+            disabled={Boolean(form.proxy_jump_id) || !form.proxy_type || form.proxy_type === 'none'}
           />
         </div>
         <div>
@@ -251,7 +284,7 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
             value={form.proxy_port || ''}
             onChange={(e) => handleChange('proxy_port', parseInt(e.target.value) || undefined)}
             placeholder={form.proxy_type === 'http' ? '8080' : '1080'}
-            disabled={!form.proxy_type || form.proxy_type === 'none'}
+            disabled={Boolean(form.proxy_jump_id) || !form.proxy_type || form.proxy_type === 'none'}
           />
         </div>
       </div>

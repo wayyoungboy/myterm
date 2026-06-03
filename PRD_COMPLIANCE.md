@@ -20,7 +20,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 延迟检测 | ✅ | TCP ping |
 | 硬件信息采集 | ✅ | 连接中心可采集 OS/CPU/内存/磁盘 |
 | 导入导出 | ✅ | JSON 导入导出命令已接入 |
-| ProxyJump | ⚠️ | 字段存在；当前明确报错，完整 SSH direct-tcpip 多跳链路未实现 |
+| ProxyJump | ✅ | Unix-like 平台通过 SSH direct-tcpip 桥接；递归解析跳板连接并检测循环 |
 | HTTP/SOCKS 出站代理 | ✅ | HTTP CONNECT 和 SOCKS5 已接入连接测试、终端、SFTP/Monitor 辅助 SSH 会话 |
 
 ## SSH 终端
