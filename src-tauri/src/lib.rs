@@ -8,6 +8,7 @@ mod terminal;
 
 use commands::local_terminal::LocalTerminalManager;
 use commands::port_forward::PortForwardManager;
+use commands::sftp::SftpTransferManager;
 use commands::telnet::TelnetManager;
 use db::DbConn;
 use tauri::Manager;
@@ -31,6 +32,7 @@ pub fn run() {
             app_handle.manage(PortForwardManager::new());
             app_handle.manage(TelnetManager::new());
             app_handle.manage(LocalTerminalManager::new());
+            app_handle.manage(SftpTransferManager::new());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -57,6 +59,7 @@ pub fn run() {
             commands::sftp::sftp_write_file,
             commands::sftp::sftp_download_path,
             commands::sftp::sftp_upload_path,
+            commands::sftp::sftp_cancel_transfer,
             commands::sftp::sftp_remove_file,
             commands::sftp::sftp_rename,
             commands::sftp::sftp_mkdir,

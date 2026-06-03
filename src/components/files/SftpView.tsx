@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { v4 as uuidv4 } from 'uuid';
 import {
   Folder,
   File,
@@ -20,6 +22,7 @@ import {
   sftpWriteFile,
   sftpDownloadPath,
   sftpUploadPath,
+  sftpCancelTransfer,
   sftpRemoveFile,
   sftpRename,
   sftpMkdir,
@@ -100,6 +103,14 @@ interface ContextMenuState {
 const initialCtx: ContextMenuState = { visible: false, x: 0, y: 0, entry: null };
 const MAX_TEXT_EDIT_BYTES = 1024 * 1024;
 
+interface TransferProgress {
+  transfer_id: string;
+  path: string;
+  file_name: string;
+  bytes_transferred: number;
+  total_bytes: number;
+}
+
 // ---------- component ----------
 
 interface SftpViewProps {
@@ -147,6 +158,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   // Loading overlay for upload/download
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferMessage, setTransferMessage] = useState('Transferring...');
+  const [activeTransferId, setActiveTransferId] = useState<string | null>(null);
+  const [transferProgress, setTransferProgress] = useState<TransferProgress | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadSide, setUploadSide] = useState<PanelSide>('remote');
@@ -263,6 +276,38 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     setSelection(side, () => new Set(checked ? entries.map((entry) => entry.path) : []));
   };
 
+  const runTrackedTransfer = async (action: (transferId: string) => Promise<void>) => {
+    const transferId = uuidv4();
+    setActiveTransferId(transferId);
+    setTransferProgress(null);
+    setTransferLoading(true);
+
+    let unlisten: (() => void) | null = null;
+
+    try {
+      unlisten = await listen<TransferProgress>(
+        `sftp-transfer-progress-${transferId}`,
+        (event) => setTransferProgress(event.payload),
+      );
+      await action(transferId);
+    } finally {
+      unlisten?.();
+      setActiveTransferId(null);
+      setTransferProgress(null);
+      setTransferLoading(false);
+    }
+  };
+
+  const cancelActiveTransfer = async () => {
+    if (!activeTransferId) return;
+    setTransferMessage('Cancelling transfer...');
+    try {
+      await sftpCancelTransfer(activeTransferId);
+    } catch (e: any) {
+      alert('Cancel failed: ' + (e?.toString?.() ?? e));
+    }
+  };
+
   // ---- navigation ----
 
   const navigateRemote = useCallback(
@@ -333,20 +378,24 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     }
 
     setCtxMenu(initialCtx);
-    setTransferLoading(true);
     try {
       let copiedFiles = 0;
-      for (const [index, entry] of entries.entries()) {
-        setTransferMessage(`Downloading ${index + 1}/${entries.length}: ${entry.name}`);
-        copiedFiles += await sftpDownloadPath(sessionId, entry.path, localPath);
-      }
+      await runTrackedTransfer(async (transferId) => {
+        for (const [index, entry] of entries.entries()) {
+          setTransferMessage(`Downloading ${index + 1}/${entries.length}: ${entry.name}`);
+          copiedFiles += await sftpDownloadPath(transferId, sessionId, entry.path, localPath);
+        }
+      });
       await loadLocal(localPath);
       clearSelection('remote');
       setTransferMessage(`Downloaded ${copiedFiles} files.`);
     } catch (e: any) {
-      alert('Download failed: ' + (e?.toString?.() ?? e));
-    } finally {
-      setTransferLoading(false);
+      const message = e?.toString?.() ?? String(e);
+      if (message.includes('Transfer cancelled')) {
+        alert('Transfer cancelled.');
+      } else {
+        alert('Download failed: ' + message);
+      }
     }
   };
 
@@ -358,20 +407,24 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
     }
 
     setCtxMenu(initialCtx);
-    setTransferLoading(true);
     try {
       let copiedFiles = 0;
-      for (const [index, entry] of entries.entries()) {
-        setTransferMessage(`Uploading ${index + 1}/${entries.length}: ${entry.name}`);
-        copiedFiles += await sftpUploadPath(sessionId, entry.path, remotePath);
-      }
+      await runTrackedTransfer(async (transferId) => {
+        for (const [index, entry] of entries.entries()) {
+          setTransferMessage(`Uploading ${index + 1}/${entries.length}: ${entry.name}`);
+          copiedFiles += await sftpUploadPath(transferId, sessionId, entry.path, remotePath);
+        }
+      });
       await loadRemote(remotePath);
       clearSelection('local');
       setTransferMessage(`Uploaded ${copiedFiles} files.`);
     } catch (e: any) {
-      alert('Upload failed: ' + (e?.toString?.() ?? e));
-    } finally {
-      setTransferLoading(false);
+      const message = e?.toString?.() ?? String(e);
+      if (message.includes('Transfer cancelled')) {
+        alert('Transfer cancelled.');
+      } else {
+        alert('Upload failed: ' + message);
+      }
     }
   };
 
@@ -890,15 +943,44 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   };
 
   // ---- main render ----
+  const transferPercent = transferProgress?.total_bytes
+    ? Math.min(100, Math.round((transferProgress.bytes_transferred / transferProgress.total_bytes) * 100))
+    : null;
 
   return (
     <div className="flex flex-col h-full relative">
       {/* Transfer overlay */}
       {transferLoading && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-[var(--bg-primary)]/70 backdrop-blur-sm">
-          <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] shadow-lg">
-            <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
-            <span className="text-sm">{transferMessage}</span>
+          <div className="w-[min(460px,90vw)] rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] shadow-lg p-4">
+            <div className="flex items-center gap-2">
+              <Loader2 size={16} className="animate-spin text-[var(--accent)]" />
+              <span className="text-sm truncate">{transferMessage}</span>
+            </div>
+            {transferProgress && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between gap-3 text-xs text-[var(--text-secondary)]">
+                  <span className="truncate">{transferProgress.file_name || transferProgress.path}</span>
+                  <span className="shrink-0">
+                    {formatSize(transferProgress.bytes_transferred)}
+                    {transferProgress.total_bytes > 0 ? ` / ${formatSize(transferProgress.total_bytes)}` : ''}
+                  </span>
+                </div>
+                <div className="mt-2 h-1.5 rounded bg-[var(--bg-primary)] overflow-hidden">
+                  <div
+                    className="h-full bg-[var(--accent)] transition-all"
+                    style={{ width: `${transferPercent ?? 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {activeTransferId && (
+              <div className="mt-3 flex justify-end">
+                <button className="btn btn-secondary text-xs" onClick={cancelActiveTransfer}>
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

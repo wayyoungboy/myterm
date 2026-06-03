@@ -1,8 +1,19 @@
 use crate::db::models::SftpEntry;
 use ssh2::{FileStat, Session, Sftp};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+const TRANSFER_BUFFER_SIZE: usize = 64 * 1024;
+
+#[derive(Debug, Clone)]
+pub struct TransferProgress {
+    pub path: String,
+    pub file_name: String,
+    pub bytes_transferred: u64,
+    pub total_bytes: u64,
+}
 
 pub fn list_dir(session: &Session, path: &str) -> Result<Vec<SftpEntry>, String> {
     let sftp = session
@@ -87,10 +98,12 @@ pub fn write_file(session: &Session, path: &str, data: &[u8]) -> Result<(), Stri
     Ok(())
 }
 
-pub fn download_path(
+pub fn download_path_with_progress(
     session: &Session,
     remote_path: &str,
     local_parent: &str,
+    cancel: &AtomicBool,
+    mut on_progress: impl FnMut(TransferProgress) -> Result<(), String>,
 ) -> Result<usize, String> {
     let sftp = session
         .sftp()
@@ -99,14 +112,17 @@ pub fn download_path(
     let root_name = source_entry_name(remote)?;
     let local_target = Path::new(local_parent).join(root_name);
 
-    download_path_inner(&sftp, remote, &local_target)
+    download_path_inner(&sftp, remote, &local_target, cancel, &mut on_progress)
 }
 
 fn download_path_inner(
     sftp: &Sftp,
     remote_path: &Path,
     local_path: &Path,
+    cancel: &AtomicBool,
+    on_progress: &mut impl FnMut(TransferProgress) -> Result<(), String>,
 ) -> Result<usize, String> {
+    check_transfer_cancelled(cancel)?;
     let stat = sftp
         .stat(remote_path)
         .map_err(|e| format!("Remote stat failed for {}: {}", remote_path.display(), e))?;
@@ -135,7 +151,13 @@ fn download_path_inner(
             }
             let child_remote = remote_child_path(&remote_path.to_string_lossy(), &name);
             let child_local = local_path.join(name);
-            copied += download_path_inner(sftp, Path::new(&child_remote), &child_local)?;
+            copied += download_path_inner(
+                sftp,
+                Path::new(&child_remote),
+                &child_local,
+                cancel,
+                on_progress,
+            )?;
         }
         Ok(copied)
     } else {
@@ -159,7 +181,24 @@ fn download_path_inner(
                 e
             )
         })?;
-        std::io::copy(&mut remote_file, &mut local_file).map_err(|e| {
+        let total_bytes = stat.size.unwrap_or(0);
+        let path = remote_path.to_string_lossy().to_string();
+        let file_name = source_entry_name(remote_path)?;
+        copy_stream_with_progress(
+            &mut remote_file,
+            &mut local_file,
+            total_bytes,
+            cancel,
+            |bytes, total| {
+                on_progress(TransferProgress {
+                    path: path.clone(),
+                    file_name: file_name.clone(),
+                    bytes_transferred: bytes,
+                    total_bytes: total,
+                })
+            },
+        )
+        .map_err(|e| {
             format!(
                 "Copy remote file failed from {} to {}: {}",
                 remote_path.display(),
@@ -171,10 +210,12 @@ fn download_path_inner(
     }
 }
 
-pub fn upload_path(
+pub fn upload_path_with_progress(
     session: &Session,
     local_path: &str,
     remote_parent: &str,
+    cancel: &AtomicBool,
+    mut on_progress: impl FnMut(TransferProgress) -> Result<(), String>,
 ) -> Result<usize, String> {
     let sftp = session
         .sftp()
@@ -183,10 +224,17 @@ pub fn upload_path(
     let root_name = source_entry_name(local)?;
     let remote_target = remote_child_path(remote_parent, &root_name);
 
-    upload_path_inner(&sftp, local, &remote_target)
+    upload_path_inner(&sftp, local, &remote_target, cancel, &mut on_progress)
 }
 
-fn upload_path_inner(sftp: &Sftp, local_path: &Path, remote_path: &str) -> Result<usize, String> {
+fn upload_path_inner(
+    sftp: &Sftp,
+    local_path: &Path,
+    remote_path: &str,
+    cancel: &AtomicBool,
+    on_progress: &mut impl FnMut(TransferProgress) -> Result<(), String>,
+) -> Result<usize, String> {
+    check_transfer_cancelled(cancel)?;
     let metadata = fs::metadata(local_path)
         .map_err(|e| format!("Local stat failed for {}: {}", local_path.display(), e))?;
 
@@ -200,7 +248,7 @@ fn upload_path_inner(sftp: &Sftp, local_path: &Path, remote_path: &str) -> Resul
             let child_path = entry.path();
             let name = source_entry_name(&child_path)?;
             let child_remote = remote_child_path(remote_path, &name);
-            copied += upload_path_inner(sftp, &child_path, &child_remote)?;
+            copied += upload_path_inner(sftp, &child_path, &child_remote, cancel, on_progress)?;
         }
         Ok(copied)
     } else {
@@ -209,7 +257,24 @@ fn upload_path_inner(sftp: &Sftp, local_path: &Path, remote_path: &str) -> Resul
         let mut remote_file = sftp
             .create(Path::new(remote_path))
             .map_err(|e| format!("Create remote file failed for {}: {}", remote_path, e))?;
-        std::io::copy(&mut local_file, &mut remote_file).map_err(|e| {
+        let total_bytes = metadata.len();
+        let path = local_path.to_string_lossy().to_string();
+        let file_name = source_entry_name(local_path)?;
+        copy_stream_with_progress(
+            &mut local_file,
+            &mut remote_file,
+            total_bytes,
+            cancel,
+            |bytes, total| {
+                on_progress(TransferProgress {
+                    path: path.clone(),
+                    file_name: file_name.clone(),
+                    bytes_transferred: bytes,
+                    total_bytes: total,
+                })
+            },
+        )
+        .map_err(|e| {
             format!(
                 "Copy local file failed from {} to {}: {}",
                 local_path.display(),
@@ -344,6 +409,42 @@ fn source_entry_name(path: &Path) -> Result<String, String> {
         .ok_or_else(|| format!("Source path has no file name: {}", path.display()))
 }
 
+fn copy_stream_with_progress(
+    reader: &mut impl Read,
+    writer: &mut impl Write,
+    total_bytes: u64,
+    cancel: &AtomicBool,
+    mut on_progress: impl FnMut(u64, u64) -> Result<(), String>,
+) -> Result<u64, String> {
+    let mut buf = [0u8; TRANSFER_BUFFER_SIZE];
+    let mut transferred = 0u64;
+
+    loop {
+        check_transfer_cancelled(cancel)?;
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("Read transfer stream failed: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        writer
+            .write_all(&buf[..n])
+            .map_err(|e| format!("Write transfer stream failed: {}", e))?;
+        transferred += n as u64;
+        on_progress(transferred, total_bytes)?;
+    }
+
+    Ok(transferred)
+}
+
+fn check_transfer_cancelled(cancel: &AtomicBool) -> Result<(), String> {
+    if cancel.load(Ordering::SeqCst) {
+        Err("Transfer cancelled".to_string())
+    } else {
+        Ok(())
+    }
+}
+
 #[allow(dead_code)]
 pub fn stat(session: &Session, path: &str) -> Result<ssh2::FileStat, String> {
     let sftp = session
@@ -356,6 +457,8 @@ pub fn stat(session: &Session, path: &str) -> Result<ssh2::FileStat, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
     fn parses_three_digit_octal_mode() {
@@ -399,5 +502,52 @@ mod tests {
             "app.tar.gz"
         );
         assert!(source_entry_name(Path::new("/")).is_err());
+    }
+
+    #[test]
+    fn copy_stream_reports_byte_progress() {
+        let mut reader = Cursor::new(vec![1u8; TRANSFER_BUFFER_SIZE * 2 + 7]);
+        let mut writer = Vec::new();
+        let cancel = AtomicBool::new(false);
+        let mut progress = Vec::new();
+
+        let copied = copy_stream_with_progress(
+            &mut reader,
+            &mut writer,
+            TRANSFER_BUFFER_SIZE as u64 * 2 + 7,
+            &cancel,
+            |bytes, total| {
+                progress.push((bytes, total));
+                Ok(())
+            },
+        )
+        .expect("copy");
+
+        assert_eq!(copied, TRANSFER_BUFFER_SIZE as u64 * 2 + 7);
+        assert_eq!(writer.len(), TRANSFER_BUFFER_SIZE * 2 + 7);
+        assert_eq!(progress.last(), Some(&(copied, copied)));
+        assert!(progress.len() >= 2);
+    }
+
+    #[test]
+    fn copy_stream_stops_when_cancelled() {
+        let mut reader = Cursor::new(vec![1u8; TRANSFER_BUFFER_SIZE * 3]);
+        let mut writer = Vec::new();
+        let cancel = AtomicBool::new(false);
+
+        let err = copy_stream_with_progress(
+            &mut reader,
+            &mut writer,
+            TRANSFER_BUFFER_SIZE as u64 * 3,
+            &cancel,
+            |_, _| {
+                cancel.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .expect_err("cancelled");
+
+        assert!(err.contains("cancelled"));
+        assert!(writer.len() < TRANSFER_BUFFER_SIZE * 3);
     }
 }

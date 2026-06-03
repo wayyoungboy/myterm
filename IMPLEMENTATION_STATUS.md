@@ -45,6 +45,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - SFTP 本地/远程面板支持拖拽文件上传和多文件选择上传，目录拖拽暂不展开。
 - SFTP 面板支持当前目录多选/全选、批量删除、远程选中文件下载到本地面板、本地选中文件上传到远程面板。
 - 远程删除已支持目录递归删除；选中文件夹时支持递归上传/下载到对侧当前目录。
+- 本地/远程面板传输使用后端流式复制，传输遮罩显示当前文件字节级进度并支持取消；取消会中止后续复制并保留已写入的部分文件。
 
 ### 服务器监控
 
@@ -96,7 +97,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - `npm run build`：通过。
 - `cd src-tauri && cargo check`：通过，当前无 Rust warning。
-- `cd src-tauri && cargo test`：通过，19 个测试。
+- `cd src-tauri && cargo test`：通过，21 个测试。
 - SSH smoke test：通过，测试服务器返回 `MYTERM_SSH_OK`。
 
 ## 已知遗留
@@ -105,6 +106,5 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - ProxyJump 已接入 Unix-like 平台；Windows 跳板桥接还需要单独实现和验证。
 - Keepalive 已配置到 SSH session；仍建议进行数小时级空闲连接 soak test。
 - SFTP/Monitor 当前为每次操作建立独立 SSH 连接，稳定性优先；后续可做连接池优化以减少握手开销。
-- SFTP 大文件字节级传输进度/取消仍是增强项。
 - 不纳入当前 SSH-first 验收：笔记、AI、端口转发、Telnet、快捷命令、云同步、RDP。
 - 未进行完整人工 UI 回归；已完成构建、Rust 检查、监控单测和远端 SSH 命令级验证。
