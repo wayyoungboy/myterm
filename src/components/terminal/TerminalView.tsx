@@ -49,6 +49,7 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   const unlistenOutput = useRef<(() => void) | null>(null);
   const unlistenExit = useRef<(() => void) | null>(null);
   const ioVersionRef = useRef(0);
+  const autoStartedTabRef = useRef<string | null>(null);
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -271,10 +272,26 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   // Connect immediately if connectionId provided and the tab has no session yet.
   useEffect(() => {
     if (!terminalReady) return;
-    if (connectionId && !activeTab?.sessionId && !sessionId && !connecting) {
+    if (
+      connectionId &&
+      activeTabId &&
+      autoStartedTabRef.current !== activeTabId &&
+      !activeTab?.sessionId &&
+      !sessionId &&
+      !connecting
+    ) {
+      autoStartedTabRef.current = activeTabId;
       handleConnect(connectionId);
     }
-  }, [connectionId, activeTab?.sessionId, sessionId, connecting, handleConnect, terminalReady]);
+  }, [
+    connectionId,
+    activeTabId,
+    activeTab?.sessionId,
+    sessionId,
+    connecting,
+    handleConnect,
+    terminalReady,
+  ]);
 
   const handleDisconnect = useCallback(async () => {
     if (!sessionId) return;
