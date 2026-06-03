@@ -1,52 +1,57 @@
 import { useAppStore } from '../../stores/appStore';
-import { X, Terminal, FolderTree, Monitor, FileText, MessageSquare, Settings } from 'lucide-react';
+import { X, Terminal, FolderOpen, Activity } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 
-const viewIcons: Record<string, React.ReactNode> = {
-  terminal: <Terminal size={14} />,
-  sftp: <FolderTree size={14} />,
-  monitor: <Monitor size={14} />,
-  notes: <FileText size={14} />,
-  ai: <MessageSquare size={14} />,
-  settings: <Settings size={14} />,
-};
+function TabIcon({ type, active }: { type: string; active: boolean }) {
+  const color = active ? 'var(--accent)' : 'var(--text-muted)';
+  const props = { size: 11, style: { color, flexShrink: 0 } };
+
+  if (type === 'sftp') return <FolderOpen {...props} />;
+  if (type === 'monitor') return <Activity {...props} />;
+  return <Terminal {...props} />;
+}
 
 export function TabBar() {
   const { tabs, activeTabId, setActiveTab, removeTab } = useAppStore();
 
   if (tabs.length === 0) return null;
 
-  const handleClose = async (tab: typeof tabs[0]) => {
-    // Disconnect the session if one exists
+  const handleClose = async (tab: typeof tabs[0], e: React.MouseEvent) => {
+    e.stopPropagation();
     if (tab.sessionId) {
       try {
         await invoke('disconnect_terminal', { sessionId: tab.sessionId });
-      } catch {
-        // Ignore errors on disconnect
-      }
+      } catch { /* ignore */ }
     }
     removeTab(tab.id);
   };
 
   return (
-    <div className="tab-bar">
+    <div className="flex items-center h-[34px] border-b border-[var(--border)] overflow-x-auto" style={{ background: 'var(--bg-secondary)' }}>
       {tabs.map((tab) => (
         <div
           key={tab.id}
-          className={`tab ${tab.id === activeTabId ? 'active' : ''}`}
+          className="flex items-center gap-1.5 px-3 h-full cursor-pointer border-r border-[var(--border)] transition-colors min-w-0 group"
+          style={{
+            background: tab.id === activeTabId ? 'var(--bg-primary)' : 'transparent',
+            borderBottom: tab.id === activeTabId ? '2px solid var(--accent)' : '2px solid transparent',
+          }}
           onClick={() => setActiveTab(tab.id)}
         >
-          {viewIcons[tab.type] || <Terminal size={14} />}
-          <span className="truncate max-w-[120px]">{tab.title}</span>
-          <div
-            className="tab-close"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleClose(tab);
-            }}
+          <TabIcon type={tab.type} active={tab.id === activeTabId} />
+          <span
+            className="text-[11px] truncate max-w-[100px]"
+            style={{ color: tab.id === activeTabId ? 'var(--text-primary)' : 'var(--text-secondary)' }}
           >
-            <X size={12} />
-          </div>
+            {tab.title}
+          </span>
+          <button
+            className="w-4 h-4 rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all hover:bg-[var(--bg-surface)]"
+            style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+            onClick={(e) => handleClose(tab, e)}
+          >
+            <X size={10} />
+          </button>
         </div>
       ))}
     </div>

@@ -1,195 +1,193 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
-import { getGroups, getConnections, deleteConnection, deleteGroup } from '../../utils/tauri';
-import type { Connection, Group } from '../../types';
-import {
-  Search, Plus, Folder, FolderOpen, Terminal, Settings,
-  FileText, MessageSquare, ChevronRight, ChevronDown,
-  Plug, Network, Wifi, Trash2, Zap
-} from 'lucide-react';
+import { getConnections, deleteConnection } from '../../utils/tauri';
+import type { Connection } from '../../types';
+import { Search, Plus, Terminal, Trash2, Server, Activity, ChevronRight, FolderOpen, Settings } from 'lucide-react';
 import { ConnectionForm } from '../connections/ConnectionForm';
-
-interface TreeItem {
-  type: 'group' | 'connection';
-  data: Group | Connection;
-  children: TreeItem[];
-  expanded: boolean;
-}
 
 export function Sidebar() {
   const {
-    sidebarCollapsed, groups, connections, searchQuery, setSearchQuery,
-    setGroups, setConnections, addTab, setSelectedConnectionId, setView,
+    sidebarCollapsed, connections, setConnections,
+    addTab, setSelectedConnectionId, setView,
+    selectedConnectionId, setSelectedConnectionId: setSelConn,
   } = useAppStore();
 
-  const [tree, setTree] = useState<TreeItem[]>([]);
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: TreeItem | null } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; item: Connection | null } | null>(null);
   const [showNewConnection, setShowNewConnection] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadData();
   }, []);
 
-  useEffect(() => {
-    buildTree();
-  }, [groups, connections, expandedGroups]);
-
   const loadData = async () => {
     try {
-      const [g, c] = await Promise.all([getGroups(), getConnections()]);
-      setGroups(g);
+      const c = await getConnections();
       setConnections(c);
     } catch (e) {
-      console.error('Failed to load data:', e);
+      console.error('Failed to load connections:', e);
     }
   };
 
-  const buildTree = () => {
-    const groupMap = new Map<string, TreeItem>();
-    const roots: TreeItem[] = [];
+  const filtered = searchQuery
+    ? connections.filter(c =>
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.host.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : connections;
 
-    // Create group nodes
-    groups.forEach((g) => {
-      groupMap.set(g.id, {
-        type: 'group',
-        data: g,
-        children: [],
-        expanded: expandedGroups.has(g.id),
-      });
-    });
-
-    // Build hierarchy
-    groups.forEach((g) => {
-      const item = groupMap.get(g.id)!;
-      if (g.parent_id && groupMap.has(g.parent_id)) {
-        groupMap.get(g.parent_id)!.children.push(item);
-      } else {
-        roots.push(item);
-      }
-    });
-
-    // Add connections
-    connections.forEach((c) => {
-      const item: TreeItem = { type: 'connection', data: c, children: [], expanded: false };
-      if (c.group_id && groupMap.has(c.group_id)) {
-        groupMap.get(c.group_id)!.children.push(item);
-      } else {
-        roots.push(item);
-      }
-    });
-
-    setTree(roots);
-  };
-
-  const toggleGroup = (id: string) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleConnect = async (conn: Connection) => {
-    const tabId = `tab-${Date.now()}`;
+  const openConnectionTab = (conn: Connection, type: 'terminal' | 'sftp' | 'monitor') => {
+    const tabId = `tab-${type}-${Date.now()}`;
+    const suffix = type === 'terminal' ? '' : type === 'sftp' ? ' / SFTP' : ' / Monitor';
     addTab({
       id: tabId,
-      title: conn.name,
+      title: `${conn.name}${suffix}`,
       connectionId: conn.id,
       sessionId: null,
-      type: 'terminal',
+      type,
     });
     setSelectedConnectionId(conn.id);
-    setView('terminal');
+    setView(type);
   };
 
-  const handleContextMenu = (e: React.MouseEvent, item: TreeItem) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, item });
-  };
-
-  const filteredTree = searchQuery
-    ? tree.filter((item) => filterItem(item, searchQuery.toLowerCase()))
-    : tree;
-
-  const filterItem = (item: TreeItem, query: string): boolean => {
-    if (item.type === 'connection') {
-      const conn = item.data as Connection;
-      return conn.name.toLowerCase().includes(query) || conn.host.toLowerCase().includes(query);
-    }
-    const group = item.data as Group;
-    if (group.name.toLowerCase().includes(query)) return true;
-    return item.children.some((child) => filterItem(child, query));
-  };
-
-  const renderItem = (item: TreeItem, depth: number = 0) => {
-    const isGroup = item.type === 'group';
-    const data = item.data;
-
-    return (
-      <React.Fragment key={data.id}>
-        <div
-          className="flex items-center gap-1 px-2 py-1 cursor-pointer hover:bg-[var(--bg-surface)] rounded mx-1 group"
-          style={{ paddingLeft: `${depth * 16 + 8}px` }}
-          onClick={() => {
-            if (isGroup) toggleGroup(data.id);
-            else handleConnect(data as Connection);
-          }}
-          onContextMenu={(e) => handleContextMenu(e, item)}
-        >
-          {isGroup ? (
-            <>
-              {item.expanded ? (
-                <ChevronDown size={14} className="text-[var(--text-muted)] shrink-0" />
-              ) : (
-                <ChevronRight size={14} className="text-[var(--text-muted)] shrink-0" />
-              )}
-              {item.expanded ? (
-                <FolderOpen size={14} className="text-[var(--accent)] shrink-0" />
-              ) : (
-                <Folder size={14} className="text-[var(--text-muted)] shrink-0" />
-              )}
-            </>
-          ) : (
-            <>
-              <span className="w-3.5 shrink-0" />
-              <Plug size={14} className="text-[var(--success)] shrink-0" />
-            </>
-          )}
-          <span className="truncate text-xs">{data.name}</span>
-          {!isGroup && (
-            <span className="ml-auto text-[10px] text-[var(--text-muted)] opacity-0 group-hover:opacity-100">
-              {(data as Connection).host}
-            </span>
-          )}
-        </div>
-        {isGroup && item.expanded && item.children.map((child) => renderItem(child, depth + 1))}
-      </React.Fragment>
-    );
-  };
+  const handleConnect = (conn: Connection) => openConnectionTab(conn, 'terminal');
 
   if (sidebarCollapsed) {
     return (
-      <div className="w-12 bg-[var(--bg-secondary)] border-r border-[var(--border)] flex flex-col items-center py-2 gap-2">
-        <button className="btn-ghost p-2 rounded" onClick={() => setView('terminal')} title="Terminal">
-          <Terminal size={18} />
+      <div className="w-12 flex flex-col items-center py-3 gap-3 border-r border-[var(--border)]" style={{ background: 'var(--bg-secondary)' }}>
+        <button
+          className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[var(--bg-surface)]"
+          style={{ color: 'var(--accent)' }}
+          onClick={() => setShowNewConnection(true)}
+          title="New Connection"
+        >
+          <Plus size={16} />
         </button>
-        <button className="btn-ghost p-2 rounded" onClick={() => setView('settings')} title="Settings">
-          <Settings size={18} />
-        </button>
+        <div className="w-6 h-px" style={{ background: 'var(--border)' }} />
+        {connections.slice(0, 8).map(conn => (
+          <button
+            key={conn.id}
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[var(--bg-surface)]"
+            style={{ color: selectedConnectionId === conn.id ? 'var(--accent)' : 'var(--text-muted)' }}
+            onClick={() => handleConnect(conn)}
+            title={conn.name}
+          >
+            <Server size={14} />
+          </button>
+        ))}
       </div>
     );
   }
 
   return (
-    <div className="w-[260px] bg-[var(--bg-secondary)] border-r border-[var(--border)] flex flex-col h-full">
+    <div className="flex flex-col h-full border-r border-[var(--border)]" style={{ width: '260px', background: 'var(--bg-secondary)' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)]">
-        <span className="text-sm font-semibold text-[var(--text-primary)]">MyTerm</span>
-        <button className="btn-ghost p-1 rounded" onClick={() => setShowNewConnection(true)} title="New Connection">
-          <Plus size={16} />
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)]">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md flex items-center justify-center" style={{ background: 'var(--accent)', color: '#fff' }}>
+            <Terminal size={12} />
+          </div>
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>MyTerm</span>
+        </div>
+        <button
+          className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[var(--bg-surface)]"
+          style={{ color: 'var(--text-muted)' }}
+          onClick={() => setShowNewConnection(true)}
+          title="New Connection"
+        >
+          <Plus size={14} />
         </button>
+      </div>
+
+      {/* Search */}
+      <div className="px-3 py-2">
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="input pl-8 py-1.5 text-xs"
+          />
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="flex gap-1 px-3 pb-2">
+        <button
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] transition-colors hover:bg-[var(--bg-surface)]"
+          style={{ color: 'var(--text-muted)' }}
+          onClick={() => setView('terminal')}
+        >
+          <Server size={11} /> Connections
+        </button>
+        <button
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] transition-colors hover:bg-[var(--bg-surface)]"
+          style={{ color: 'var(--text-muted)' }}
+          onClick={() => setView('settings')}
+        >
+          <Settings size={11} /> Settings
+        </button>
+      </div>
+
+      {/* Divider */}
+      <div className="mx-3 mb-2 h-px" style={{ background: 'var(--border)' }} />
+
+      {/* Connection List */}
+      <div className="flex-1 overflow-y-auto px-2">
+        {filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--bg-surface)' }}>
+              <Server size={18} style={{ color: 'var(--text-muted)' }} />
+            </div>
+            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+              {searchQuery ? 'No matches' : 'No connections'}
+            </span>
+            {!searchQuery && (
+              <button
+                className="btn btn-primary text-xs px-3 py-1.5"
+                onClick={() => setShowNewConnection(true)}
+              >
+                <Plus size={12} /> Add Connection
+              </button>
+            )}
+          </div>
+        ) : (
+          filtered.map(conn => (
+            <div
+              key={conn.id}
+              className="group flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors mb-0.5"
+              style={{
+                background: selectedConnectionId === conn.id ? 'var(--bg-surface)' : 'transparent',
+              }}
+              onClick={() => {
+                setSelConn(conn.id);
+              }}
+              onDoubleClick={() => handleConnect(conn)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextMenu({ x: e.clientX, y: e.clientY, item: conn });
+              }}
+            >
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: 'var(--bg-surface)' }}
+              >
+                <Server size={14} style={{ color: 'var(--success)' }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{conn.name}</div>
+                <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>{conn.username}@{conn.host}:{conn.port}</div>
+              </div>
+              <ChevronRight
+                size={12}
+                className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                style={{ color: 'var(--text-muted)' }}
+              />
+            </div>
+          ))
+        )}
       </div>
 
       {/* New Connection Form Modal */}
@@ -203,52 +201,6 @@ export function Sidebar() {
         />
       )}
 
-      {/* Search */}
-      <div className="px-2 py-1.5">
-        <div className="relative">
-          <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
-          <input
-            type="text"
-            placeholder="Search connections..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="input pl-7 py-1 text-xs"
-          />
-        </div>
-      </div>
-
-      {/* Quick actions */}
-      <div className="flex flex-wrap gap-1 px-2 py-1 border-b border-[var(--border)]">
-        <button className="btn-ghost p-1.5 rounded flex-1 flex items-center justify-center gap-1 text-[10px]" onClick={() => setView('terminal')}>
-          <Terminal size={12} /> Terminal
-        </button>
-        <button className="btn-ghost p-1.5 rounded flex-1 flex items-center justify-center gap-1 text-[10px]" onClick={() => setView('notes')}>
-          <FileText size={12} /> Notes
-        </button>
-        <button className="btn-ghost p-1.5 rounded flex-1 flex items-center justify-center gap-1 text-[10px]" onClick={() => setView('ai')}>
-          <MessageSquare size={12} /> AI
-        </button>
-        <button className="btn-ghost p-1.5 rounded flex-1 flex items-center justify-center gap-1 text-[10px]" onClick={() => setView('quickcommands')}>
-          <Zap size={12} /> Commands
-        </button>
-        <button className="btn-ghost p-1.5 rounded flex-1 flex items-center justify-center gap-1 text-[10px]" onClick={() => setView('portforward')}>
-          <Network size={12} /> Forward
-        </button>
-        <button className="btn-ghost p-1.5 rounded flex-1 flex items-center justify-center gap-1 text-[10px]" onClick={() => setView('telnet')}>
-          <Wifi size={12} /> Telnet
-        </button>
-      </div>
-
-      {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
-        {filteredTree.map((item) => renderItem(item))}
-        {filteredTree.length === 0 && (
-          <div className="text-center text-xs text-[var(--text-muted)] py-8">
-            {searchQuery ? 'No matches found' : 'No connections yet'}
-          </div>
-        )}
-      </div>
-
       {/* Context menu */}
       {contextMenu && (
         <>
@@ -257,52 +209,37 @@ export function Sidebar() {
             className="context-menu"
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
-            {contextMenu.item?.type === 'group' ? (
-              <>
-                <div className="context-menu-item" onClick={() => {
-                  setContextMenu(null);
-                  setShowNewConnection(true);
-                }}>
-                  <Plus size={14} /> New Connection
-                </div>
-                <div className="context-menu-divider" />
-                <div className="context-menu-item text-[var(--error)]" onClick={async () => {
-                  const group = contextMenu.item!.data as Group;
-                  setContextMenu(null);
-                  if (confirm(`Delete group "${group.name}"?`)) {
-                    try {
-                      await deleteGroup(group.id);
-                      loadData();
-                    } catch (e) {
-                      console.error('Failed to delete group:', e);
-                    }
-                  }
-                }}>
-                  <Trash2 size={14} /> Delete Group
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="context-menu-item" onClick={() => { handleConnect(contextMenu.item!.data as Connection); setContextMenu(null); }}>
-                  <Terminal size={14} /> Connect
-                </div>
-                <div className="context-menu-divider" />
-                <div className="context-menu-item text-[var(--error)]" onClick={async () => {
-                  const conn = contextMenu.item!.data as Connection;
-                  setContextMenu(null);
-                  if (confirm(`Delete connection "${conn.name}"?`)) {
-                    try {
-                      await deleteConnection(conn.id);
-                      loadData();
-                    } catch (e) {
-                      console.error('Failed to delete connection:', e);
-                    }
-                  }
-                }}>
-                  <Trash2 size={14} /> Delete
-                </div>
-              </>
-            )}
+            <div className="context-menu-item" onClick={() => {
+              handleConnect(contextMenu.item!);
+              setContextMenu(null);
+            }}>
+              <Terminal size={14} /> Open Terminal
+            </div>
+            <div className="context-menu-item" onClick={() => {
+              openConnectionTab(contextMenu.item!, 'sftp');
+              setContextMenu(null);
+            }}>
+              <FolderOpen size={14} /> Open SFTP
+            </div>
+            <div className="context-menu-item" onClick={() => {
+              openConnectionTab(contextMenu.item!, 'monitor');
+              setContextMenu(null);
+            }}>
+              <Activity size={14} /> Open Monitor
+            </div>
+            <div className="context-menu-divider" />
+            <div className="context-menu-item text-[var(--error)]" onClick={async () => {
+              const conn = contextMenu.item!;
+              setContextMenu(null);
+              try {
+                await deleteConnection(conn.id);
+                loadData();
+              } catch (e) {
+                console.error('Failed to delete:', e);
+              }
+            }}>
+              <Trash2 size={14} /> Delete
+            </div>
           </div>
         </>
       )}
