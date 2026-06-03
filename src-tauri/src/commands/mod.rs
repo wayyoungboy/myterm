@@ -12,3 +12,5 @@ pub mod telnet;
 pub mod quick_commands;
 pub mod import_export;
 pub mod local_terminal;
+pub mod local_fs;
+pub mod screenshot;

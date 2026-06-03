@@ -18,6 +18,15 @@ export const updateConnection = (id: string, input: ConnectionInput) =>
 export const deleteConnection = (id: string) => invoke('delete_connection', { id });
 export const testConnection = (input: ConnectionInput) =>
   invoke<string>('test_connection', { input });
+
+export interface ServerInfo {
+  os: string;
+  cpu_cores: number;
+  memory_total: number;
+  disk_total: number;
+}
+export const collectServerInfo = (input: ConnectionInput) =>
+  invoke<ServerInfo>('collect_server_info', { input });
 export const searchConnections = (query: string) =>
   invoke<Connection[]>('search_connections', { query });
 
@@ -40,6 +49,18 @@ export const sftpRename = (sessionId: string, src: string, dst: string) =>
   invoke('sftp_rename', { sessionId, src, dst });
 export const sftpMkdir = (sessionId: string, path: string) =>
   invoke('sftp_mkdir', { sessionId, path });
+
+// Local filesystem for SFTP two-pane view
+export const listLocalDir = (path: string) =>
+  invoke<SftpEntry[]>('list_local_dir', { path });
+export const writeLocalFile = (path: string, data: number[]) =>
+  invoke('write_local_file', { path, data });
+export const removeLocalFile = (path: string) =>
+  invoke('remove_local_file', { path });
+export const renameLocalFile = (src: string, dst: string) =>
+  invoke('rename_local_file', { src, dst });
+export const createLocalDir = (path: string) =>
+  invoke('create_local_dir', { path });
 
 // Monitor
 export const getMonitorData = (sessionId: string) =>
@@ -149,3 +170,6 @@ export const localTerminalWrite = (sessionId: string, data: string) =>
   invoke('local_terminal_write', { sessionId, data });
 export const closeLocalTerminal = (sessionId: string) =>
   invoke('close_local_terminal', { sessionId });
+
+// Screenshot (dev tool)
+export const takeScreenshot = () => invoke<string>('take_screenshot');

@@ -22,6 +22,11 @@ import {
   sftpRename,
   sftpMkdir,
   connectTerminal,
+  listLocalDir,
+  writeLocalFile,
+  removeLocalFile,
+  renameLocalFile,
+  createLocalDir,
 } from '../../utils/tauri';
 
 // ---------- helpers ----------
@@ -170,23 +175,15 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
 
   // ---- local helpers (via Tauri invoke) ----
 
-  // We call a local command "list_local_dir" if available, otherwise we
-  // simulate a minimal local FS listing. The backend is expected to expose
-  // `list_local_dir` returning SftpEntry[]; if it doesn't exist we degrade
-  // gracefully.
   const loadLocal = useCallback(async (p: string) => {
     setLocalLoading(true);
     setLocalError(null);
     try {
-      // Attempt Tauri IPC for local dir listing. This requires the Rust
-      // backend to expose a `list_local_dir` command that returns SftpEntry[].
-      const { invoke } = await import('@tauri-apps/api/core');
-      const list: SftpEntry[] = await invoke('list_local_dir', { path: p });
+      const list = await listLocalDir(p);
       setLocalEntries(sortEntries(list));
       setLocalPath(p);
     } catch (e: any) {
       setLocalError(e?.toString?.() ?? 'Failed to list local directory');
-      // Fallback: show empty
       setLocalEntries([]);
       setLocalPath(p);
     } finally {
@@ -293,10 +290,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         await sftpWriteFile(sessionId, dst, data);
         await loadRemote(remotePath);
       } else {
-        // Local upload: write via invoke
-        const { invoke } = await import('@tauri-apps/api/core');
         const dst = localPath === '/' ? `/${file.name}` : `${localPath}/${file.name}`;
-        await invoke('write_local_file', { path: dst, data });
+        await writeLocalFile(dst, data);
         await loadLocal(localPath);
       }
     } catch (err: any) {
@@ -317,8 +312,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         await sftpRemoveFile(sessionId, entry.path);
         await loadRemote(remotePath);
       } else {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('remove_local_file', { path: entry.path });
+        await removeLocalFile(entry.path);
         await loadLocal(localPath);
       }
     } catch (e: any) {
@@ -346,8 +340,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         await sftpRename(sessionId, entry.path, newPath);
         await loadRemote(remotePath);
       } else {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('rename_local_file', { src: entry.path, dst: newPath });
+        await renameLocalFile(entry.path, newPath);
         await loadLocal(localPath);
       }
     } catch (e: any) {
@@ -373,8 +366,7 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         await sftpMkdir(sessionId, newPath);
         await loadRemote(remotePath);
       } else {
-        const { invoke } = await import('@tauri-apps/api/core');
-        await invoke('create_local_dir', { path: newPath });
+        await createLocalDir(newPath);
         await loadLocal(localPath);
       }
     } catch (e: any) {

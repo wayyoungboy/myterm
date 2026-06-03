@@ -40,6 +40,7 @@ pub fn run() {
             commands::connections::delete_connection,
             commands::connections::test_connection,
             commands::connections::search_connections,
+            commands::connections::collect_server_info,
             // Terminal
             commands::terminal::connect_terminal,
             commands::terminal::disconnect_terminal,
@@ -93,6 +94,14 @@ pub fn run() {
             commands::local_terminal::open_local_terminal,
             commands::local_terminal::local_terminal_write,
             commands::local_terminal::close_local_terminal,
+            // Local filesystem for SFTP two-pane view
+            commands::local_fs::list_local_dir,
+            commands::local_fs::write_local_file,
+            commands::local_fs::remove_local_file,
+            commands::local_fs::rename_local_file,
+            commands::local_fs::create_local_dir,
+            // Screenshot (dev)
+            commands::screenshot::take_screenshot,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
