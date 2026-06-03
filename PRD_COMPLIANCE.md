@@ -1,31 +1,24 @@
-# PRD 对照：SSH 核心收敛版
+# PRD 对照：MyTerm 当前完成度
 
 更新时间：2026-06-04
 
 ## 当前产品口径
 
-MyTerm 当前按 SSH 管理器推进，不按全量远程运维套件推进。本轮用户明确排除：
-
-- 笔记
-- AI
-- 端口转发
-- Telnet
-- 快捷命令
-- 云同步
-- RDP
-
-因此，本文件只记录 SSH 连接、终端、SFTP、监控的完成度。
+MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务器监控必须可用；其他工具作为桌面壳能力逐步恢复。XTerminal 主要作为监控和交互结构参考，不直接引入参考项目源码。
 
 ## SSH 连接管理
 
 | 需求项 | 状态 | 说明 |
 | --- | --- | --- |
 | 连接 CRUD | ✅ | SQLite + Tauri commands + 连接中心 UI |
+| 分组字段 | ✅ | DB、命令、表单选择已支持 |
 | 密码认证 | ✅ | `ssh2::Session::userauth_password` |
 | 密钥认证 | ✅ | `userauth_pubkey_file` |
+| 交互式认证入口 | ✅ | 表单入口已恢复 |
 | 连接测试 | ✅ | `test_connection` |
 | 延迟检测 | ✅ | TCP ping |
-| 分组字段 | ✅ | DB 和命令已支持 |
+| 硬件信息采集 | ✅ | 连接中心可采集 OS/CPU/内存/磁盘 |
+| 导入导出 | ✅ | JSON 导入导出命令已接入 |
 | ProxyJump | ⚠️ | 字段存在，完整链路未实现 |
 | HTTP/SOCKS 出站代理 | ⚠️ | 字段/UI 雏形存在，完整链路未实现 |
 
@@ -40,6 +33,7 @@ MyTerm 当前按 SSH 管理器推进，不按全量远程运维套件推进。�
 | tab 关闭释放 session | ✅ | `TabBar` 调用 `disconnect_terminal` |
 | Resize | ✅ | xterm fit + `terminal_resize` |
 | 初始化命令/路径 | ✅ | 后端连接后写入 shell |
+| 快捷命令写入当前终端 | ✅ | 支持变量展开后写入 SSH session |
 
 ## SFTP
 
@@ -52,8 +46,10 @@ MyTerm 当前按 SSH 管理器推进，不按全量远程运维套件推进。�
 | 本地目录列表 | ✅ | `list_local_dir` |
 | 本地写入/删除/重命名/建目录 | ✅ | `local_fs.rs` |
 | 双栏 UI | ✅ | 本地/远程面板 |
-| 批量操作 | ⚠️ | 非本轮目标 |
-| 权限编辑 | ⚠️ | 非本轮目标 |
+| 上传/下载 | ✅ | 基础文件上传和下载已接入 |
+| 批量操作 | ⚠️ | 增强项 |
+| 权限编辑 | ⚠️ | 增强项 |
+| 拖拽上传 | ⚠️ | 增强项 |
 
 ## 服务器监控
 
@@ -61,17 +57,35 @@ MyTerm 当前按 SSH 管理器推进，不按全量远程运维套件推进。�
 | --- | --- | --- |
 | Monitor tab 自动建 session | ✅ | `MonitorView` 调用 `connectTerminal` |
 | 系统信息 | ✅ | hostname / OS / uptime / load avg |
-| CPU | ✅ | `/proc/stat` |
-| 内存 | ✅ | `/proc/meminfo` |
-| 网络 | ✅ | `/proc/net/dev` |
-| 磁盘 | ✅ | `df -B1` |
+| CPU 总使用率 | ✅ | `/proc/stat` 前后快照 |
+| 每核心 CPU | ✅ | UI 显示 per-core 使用率 |
+| 内存 | ✅ | `/proc/meminfo`，缓存口径参考 XTerminal |
+| 网络累计流量 | ✅ | `/proc/net/dev` |
+| 网络实时速率 | ✅ | 前后快照计算 |
+| 网卡名称 | ✅ | `net_interfaces` |
+| 磁盘分区 | ✅ | `df` + `/proc/mounts` |
+| 文件系统类型 | ✅ | `fs_type` |
+| 磁盘读写速率 | ✅ | `/proc/diskstats` 前后快照 |
 | GPU | ✅ | `nvidia-smi` 可用时采集 |
 | Top 进程 | ✅ | `ps` 按 CPU/MEM 排序 |
-| 解析测试 | ✅ | Rust unit tests 覆盖 section 和 process parsing |
+| 解析测试 | ✅ | Rust unit tests 覆盖关键解析路径 |
+
+## 附加工具
+
+| 需求项 | 状态 | 说明 |
+| --- | --- | --- |
+| 笔记 | ✅ | CRUD、连接过滤、自动保存 |
+| 快捷命令 | ✅ | CRUD、变量展开、一键执行到当前 SSH 终端 |
+| 设置 | ✅ | 本地设置读写 |
+| AI 助手 | ⚠️ | 会话和消息可保存，真实模型 API 未接入 |
+| 端口转发 | ⚠️ | local/dynamic 基础命令存在，remote 和关闭生命周期未完成 |
+| Telnet | ⚠️ | 基础 TCP/Telnet I/O 存在，未完整验收 |
+| RDP | ⚠️ | 外部客户端 launcher 存在，未完整验收 |
+| 云同步 | ❌ | 未实现 |
 
 ## 验证
 
-已执行：
+已执行或本轮应持续执行：
 
 ```bash
 npm run build
@@ -80,10 +94,9 @@ cd src-tauri && cargo test
 ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'echo MYTERM_SSH_OK && uname -a && pwd'
 ```
 
-结果：
+最近结果：
 
 - TypeScript/Vite build 通过。
-- Rust check 通过，仍有既有 warning。
-- Rust tests 通过，2 个测试。
+- Rust check 通过且无 warning。
+- 监控解析单元测试通过，当前覆盖 3 个测试。
 - 真实 SSH 测试服务器连接通过。
-

@@ -1,26 +1,20 @@
-# MyTerm SSH 核心实现状态
+# MyTerm 实现状态
 
 更新时间：2026-06-04
 
-## 当前范围
+## 当前产品口径
 
-本轮只以 SSH 对接为完成目标：
+MyTerm 当前按 SSH-first 桌面管理器推进，优先保证 SSH 连接、终端、SFTP 和监控体验完整可用。参考 XTerminal 的部分能力已经吸收到监控采集和工具入口中，但 XTerminal 目录仅作为本地参考材料，不应作为产品源码提交。
 
-- SSH 连接管理
-- SSH 终端
-- SFTP 文件管理
-- SSH 会话监控
-
-以下功能不纳入当前完成口径：笔记、AI、端口转发、Telnet、快捷命令、云同步、RDP。
-
-## 已完成
+## 已完成主线
 
 ### SSH 连接与终端
 
-- 连接中心作为默认工作台。
-- 侧边栏与连接中心均可打开 SSH 终端 tab。
+- 连接中心作为默认工作台，支持连接 CRUD、分组字段、搜索、延迟检测和连接测试。
+- 侧边栏与连接中心均可打开 SSH 终端、SFTP 和监控 tab。
 - tab 类型按 `terminal` / `sftp` / `monitor` 路由到真实视图。
 - 终端 tab 切换不再触发 SSH 断开；关闭 tab 才释放 session。
+- 终端输入、resize、连接和断开通过统一 Tauri 封装调用。
 - SSH smoke test 已验证：
 
 ```bash
@@ -31,34 +25,49 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - SFTP tab 会基于连接自动建立 SSH session。
 - 远程 SFTP 复用后端 `TerminalManager` 中的 SSH session。
-- 本地文件面板补齐 Tauri 命令：
+- 双栏文件管理已接入本地和远程文件操作。
+- 本地文件命令已补齐：
   - `list_local_dir`
   - `write_local_file`
   - `remove_local_file`
   - `rename_local_file`
   - `create_local_dir`
-- 前端统一通过 `src/utils/tauri.ts` 调用本地文件 IPC。
+- 远程命令覆盖列表、读取、写入、删除、重命名、建目录。
 
 ### 服务器监控
 
 - Monitor tab 会基于连接自动建立 SSH session。
-- 修复监控脚本 section 解析，支持多行 section。
-- Rust 模型补齐 `top_cpu_processes` 和 `top_mem_processes`。
-- 新增 Rust 单元测试覆盖监控输出解析。
+- 监控采集参考 XTerminal 的快照思路，远端状态存放在 `~/.myterm`。
+- CPU 使用率基于 `/proc/stat` 前后快照计算。
+- 网络速率基于 `/proc/net/dev` 前后快照计算，并显示网卡名称。
+- 磁盘分区显示文件系统类型、使用量和读写速率。
+- 内存缓存口径包含 `Buffers`、`Cached`、`SReclaimable`。
+- Top CPU/MEM 进程列表已解析并展示。
+- Rust 单元测试覆盖 section 解析、进程解析和 XTerminal-style 监控速率/磁盘类型解析。
+
+### 工具视图
+
+- 侧边栏已恢复 Notes、AI、Forward、Telnet、Commands、Settings 入口。
+- Notes 支持本地 CRUD、按连接过滤和自动保存。
+- Quick Commands 支持 CRUD、一键写入当前 SSH 终端，并展开 `${host}`、`${port}`、`${username}`、`${date}`、`${time}`。
+- Settings 支持本地设置读写。
+- AI 当前是本地会话和消息存储，回复仍为占位提示，尚未接入真实模型 API。
+- Port forwarding、Telnet、RDP launcher 有后端命令和 UI，但还未作为完整主线完成验收。
 
 ## 验证结果
 
-最近一次完整验证：
+最近一次验证：
 
 - `npm run build`：通过。
-- `cargo check`：通过，保留既有 23 个未用代码 warning。
-- `cargo test`：通过，2 个测试。
+- `cd src-tauri && cargo check`：通过，当前无 Rust warning。
+- `cd src-tauri && cargo test --lib monitor::tests`：通过，3 个监控解析测试。
 - SSH smoke test：通过，测试服务器返回 `MYTERM_SSH_OK`。
 
 ## 已知遗留
 
-- Rust warning 主要来自当前不纳入范围或尚未接入的旧模块，如 RDP、Telnet、quick commands、local terminal、ProxyJump TODO。
-- SFTP 批量操作、远程书签、权限编辑不是本轮目标。
 - ProxyJump/HTTP/SOCKS 出站代理字段已有雏形，但完整链路尚未实现。
-- 未进行图形界面人工验收；已完成构建、Rust 测试和远端 SSH 命令级验证。
-
+- 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，关闭转发只标记状态，监听线程生命周期还需产品化处理。
+- Telnet 和 RDP launcher 未做真实环境矩阵验证。
+- AI 未接入真实模型提供方。
+- SFTP 批量操作、权限编辑、拖拽上传和远程在线编辑仍是增强项。
+- 未进行完整人工 UI 回归；已完成构建、Rust 检查、监控单测和远端 SSH 命令级验证。
