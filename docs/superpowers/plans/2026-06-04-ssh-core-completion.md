@@ -4,7 +4,7 @@
 
 **Goal:** Complete the SSH-centered product flow: connection management, terminal sessions, SFTP, and server monitoring.
 
-**Architecture:** Keep the Tauri command boundary as the frontend/backend contract. Reuse the existing SSH `TerminalManager` sessions for terminal, SFTP, and monitor operations, and keep non-SSH features out of primary navigation.
+**Architecture:** Keep the Tauri command boundary as the frontend/backend contract. Terminal tabs own long-lived SSH sessions; SFTP and monitor commands resolve the tab's connection and use independent SSH sessions for blocking subsystem work.
 
 **Tech Stack:** Tauri 2, Rust, ssh2, SQLite/rusqlite, React 19, TypeScript, Vite, Zustand, xterm.js.
 
@@ -17,9 +17,9 @@
 In scope:
 - SSH connection CRUD and connection center.
 - SSH terminal tabs.
-- SFTP remote file management backed by an active SSH session.
+- SFTP remote file management launched from an active terminal tab.
 - Local filesystem commands needed by the SFTP two-panel UI.
-- Server monitor view backed by an active SSH session.
+- Server monitor view launched from an active terminal tab.
 - Documentation and staged git commits.
 
 Out of scope:
@@ -139,7 +139,7 @@ git commit -m "fix: harden ssh terminal sessions"
   - `rename_local_file(src, dst)`
   - `create_local_dir(path)`
 - [x] Return local entries using the existing `SftpEntry` shape.
-- [x] Keep remote SFTP operations backed by active SSH sessions.
+- [x] Keep remote SFTP operations tied to active terminal tabs while using independent SSH sessions for file operations.
 - [x] Improve empty-session and permission errors in the SFTP UI.
 - [x] Run `npm run build` and `cargo check`.
 - [x] Commit:
@@ -158,7 +158,7 @@ git commit -m "feat: complete sftp file management commands"
 - Modify: `src-tauri/src/monitor/mod.rs`
 - Modify: `src/types/index.ts`
 
-- [x] Ensure monitor tabs use the active SSH session.
+- [x] Ensure monitor tabs use the active terminal tab context while using independent SSH sessions for monitor collection.
 - [x] Make no-session, loading, and command failure states actionable.
 - [x] Verify remote monitor scripts work on the provided Ubuntu server where possible.
 - [x] Run `npm run build` and `cargo check`.

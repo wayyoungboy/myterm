@@ -24,7 +24,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 ### SFTP
 
 - SFTP tab 会基于连接自动建立 SSH session。
-- 远程 SFTP 复用后端 `TerminalManager` 中的 SSH session。
+- 远程 SFTP 操作会根据 terminal session 找回连接配置，并为文件操作建立独立 SSH session，避免切换终端 session 的 blocking mode。
 - 双栏文件管理已接入本地和远程文件操作。
 - 本地文件命令已补齐：
   - `list_local_dir`
@@ -37,6 +37,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 ### 服务器监控
 
 - Monitor tab 会基于连接自动建立 SSH session。
+- 监控采集使用独立 SSH session，不再复用终端 reader 的 SSH session。
 - 监控采集参考 XTerminal 的快照思路，远端状态存放在 `~/.myterm`。
 - CPU 使用率基于 `/proc/stat` 前后快照计算。
 - 网络速率基于 `/proc/net/dev` 前后快照计算，并显示网卡名称。
@@ -54,6 +55,14 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - AI 当前是本地会话和消息存储，回复仍为占位提示，尚未接入真实模型 API。
 - Port forwarding、Telnet、RDP launcher 有后端命令和 UI，但还未作为完整主线完成验收。
 
+### 运行日志
+
+- 应用启动时初始化 `myterm.log`，位于 Tauri app data 目录。
+- 日志覆盖启动、连接配置变更、SSH 连接、断开、SFTP 操作、监控采集和端口转发生命周期。
+- 关键操作包含 `op_id`、`session_id` / `connection_id`、目标 host/port、耗时和错误原因，便于追溯。
+- 默认日志等级为 `info`，可通过 `MYTERM_LOG=debug` 或 `MYTERM_LOG=trace` 提升。
+- 不记录密码、私钥内容或终端输入字节。
+
 ## 验证结果
 
 最近一次验证：
@@ -66,6 +75,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 ## 已知遗留
 
 - ProxyJump/HTTP/SOCKS 出站代理字段已有雏形，但完整链路尚未实现。
+- SFTP/Monitor 当前为每次操作建立独立 SSH 连接，稳定性优先；后续可做连接池优化以减少握手开销。
 - 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，关闭转发只标记状态，监听线程生命周期还需产品化处理。
 - Telnet 和 RDP launcher 未做真实环境矩阵验证。
 - AI 未接入真实模型提供方。

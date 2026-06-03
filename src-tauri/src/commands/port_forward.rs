@@ -42,6 +42,18 @@ pub fn create_port_forward(
     remote_host: String,
     remote_port: u16,
 ) -> Result<String, String> {
+    let op_id = uuid::Uuid::new_v4().to_string();
+    log::info!(
+        target: "myterm::port_forward",
+        "create start op_id={} session_id={} type={} local={}:{} remote={}:{}",
+        op_id,
+        session_id,
+        forward_type,
+        local_host,
+        local_port,
+        remote_host,
+        remote_port
+    );
     let session = tm.get_session(&session_id).ok_or("Session not found")?;
     let id = uuid::Uuid::new_v4().to_string();
 
@@ -69,6 +81,11 @@ pub fn create_port_forward(
         }
         "remote" => {
             // Remote forwarding requires channel_forward_listen which may not be available
+            log::warn!(
+                target: "myterm::port_forward",
+                "create rejected op_id={} reason=remote_not_supported",
+                op_id
+            );
             return Err("Remote forwarding not yet supported".to_string());
         }
         "dynamic" => {
@@ -86,7 +103,15 @@ pub fn create_port_forward(
                 }
             });
         }
-        _ => return Err("Invalid forward type".to_string()),
+        _ => {
+            log::warn!(
+                target: "myterm::port_forward",
+                "create rejected op_id={} reason=invalid_type type={}",
+                op_id,
+                forward_type
+            );
+            return Err("Invalid forward type".to_string());
+        }
     }
 
     let forward = PortForward {
@@ -101,6 +126,12 @@ pub fn create_port_forward(
     };
 
     pfm.forwards.lock().insert(id.clone(), forward);
+    log::info!(
+        target: "myterm::port_forward",
+        "create success op_id={} forward_id={}",
+        op_id,
+        id
+    );
 
     Ok(id)
 }
@@ -121,6 +152,18 @@ pub fn close_port_forward(
     let mut forwards = pfm.forwards.lock();
     if let Some(forward) = forwards.get_mut(&id) {
         forward.active = false;
+        log::info!(
+            target: "myterm::port_forward",
+            "close marked inactive forward_id={} session_id={}",
+            id,
+            forward.session_id
+        );
+    } else {
+        log::warn!(
+            target: "myterm::port_forward",
+            "close requested for missing forward_id={}",
+            id
+        );
     }
     Ok(())
 }

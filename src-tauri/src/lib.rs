@@ -4,6 +4,7 @@ mod terminal;
 mod monitor;
 mod commands;
 mod crypto;
+mod logging;
 
 use db::DbConn;
 use terminal::TerminalManager;
@@ -20,6 +21,10 @@ pub fn run() {
             let app_handle = app.handle();
             let app_dir = app_handle.path().app_data_dir().expect("Failed to get app data dir");
             std::fs::create_dir_all(&app_dir).ok();
+            match logging::init(&app_dir) {
+                Ok(path) => log::info!(target: "myterm::app", "startup app_dir={} log_path={}", app_dir.display(), path.display()),
+                Err(err) => eprintln!("Failed to initialize MyTerm logging: {err}"),
+            }
             let db_path = app_dir.join("myterm.db");
             app_handle.manage(DbConn::new(db_path));
             app_handle.manage(TerminalManager::new());

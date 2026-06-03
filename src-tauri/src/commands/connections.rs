@@ -199,6 +199,15 @@ pub fn create_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Resul
     let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let port = input.port.unwrap_or(22);
     let auth_type = input.auth_type.unwrap_or_else(|| "password".to_string());
+    log::info!(
+        target: "myterm::connections",
+        "create connection start id={} name={} host={} port={} auth_type={}",
+        id,
+        input.name,
+        input.host,
+        port,
+        auth_type
+    );
 
     // Encrypt password before storing
     let encrypted_password = if let Some(ref pwd) = input.password {
@@ -212,7 +221,7 @@ pub fn create_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Resul
         None
     };
 
-    conn.execute(
+    let result = conn.execute(
         "INSERT INTO connections (id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19)",
         rusqlite::params![
             id, input.group_id, input.name, input.host, port, auth_type,
@@ -221,16 +230,37 @@ pub fn create_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Resul
             input.init_command, input.init_path, input.timeout_ms,
             input.heartbeat_ms.unwrap_or(5000), input.remark
         ],
-    )
-    .map_err(|e| e.to_string())?;
+    );
+    if let Err(e) = result {
+        log::error!(
+            target: "myterm::connections",
+            "create connection failed id={} error={}",
+            id,
+            e
+        );
+        return Err(e.to_string());
+    }
 
     let connection = query_connection(&conn, &id)?;
+    log::info!(
+        target: "myterm::connections",
+        "create connection success id={}",
+        id
+    );
     Ok(to_response(&connection))
 }
 
 #[tauri::command]
 pub fn update_connection(db: State<'_, DbConn>, id: String, input: ConnectionInput) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    log::info!(
+        target: "myterm::connections",
+        "update connection start id={} name={} host={} port={}",
+        id,
+        input.name,
+        input.host,
+        input.port.unwrap_or(22)
+    );
 
     // Encrypt password if provided
     let encrypted_password = if let Some(ref pwd) = input.password {
@@ -244,7 +274,7 @@ pub fn update_connection(db: State<'_, DbConn>, id: String, input: ConnectionInp
         None
     };
 
-    conn.execute(
+    let result = conn.execute(
         "UPDATE connections SET group_id=?1, name=?2, host=?3, port=?4, auth_type=?5, username=?6, password_enc=?7, key_path=?8, credential_id=?9, proxy_type=?10, proxy_host=?11, proxy_port=?12, proxy_jump_id=?13, init_command=?14, init_path=?15, timeout_ms=?16, heartbeat_ms=?17, remark=?18, updated_at=CURRENT_TIMESTAMP WHERE id=?19",
         rusqlite::params![
             input.group_id, input.name, input.host,
@@ -255,22 +285,46 @@ pub fn update_connection(db: State<'_, DbConn>, id: String, input: ConnectionInp
             input.init_command, input.init_path, input.timeout_ms,
             input.heartbeat_ms.unwrap_or(5000), input.remark, id
         ],
-    )
-    .map_err(|e| e.to_string())?;
+    );
+    if let Err(e) = result {
+        log::error!(
+            target: "myterm::connections",
+            "update connection failed id={} error={}",
+            id,
+            e
+        );
+        return Err(e.to_string());
+    }
+    log::info!(
+        target: "myterm::connections",
+        "update connection success id={}",
+        id
+    );
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_connection(db: State<'_, DbConn>, id: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
+    log::info!(target: "myterm::connections", "delete connection start id={}", id);
     conn.execute("DELETE FROM connections WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            log::error!(
+                target: "myterm::connections",
+                "delete connection failed id={} error={}",
+                id,
+                e
+            );
+            e.to_string()
+        })?;
+    log::info!(target: "myterm::connections", "delete connection success id={}", id);
     Ok(())
 }
 
 #[tauri::command]
 pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
     use crate::ssh::connection::{connect, SshConnectParams};
+    let op_id = Uuid::new_v4().to_string();
     let params = SshConnectParams {
         host: input.host,
         port: input.port.unwrap_or(22) as u16,
@@ -284,7 +338,33 @@ pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
         init_path: None,
         heartbeat_ms: None,
     };
-    connect(&params)?;
+    log::info!(
+        target: "myterm::connections",
+        "test connection start op_id={} host={} port={} username={} auth_type={}",
+        op_id,
+        params.host,
+        params.port,
+        params.username,
+        params.auth_type
+    );
+    connect(&params).map_err(|err| {
+        log::error!(
+            target: "myterm::connections",
+            "test connection failed op_id={} host={} port={} error={}",
+            op_id,
+            params.host,
+            params.port,
+            err
+        );
+        err
+    })?;
+    log::info!(
+        target: "myterm::connections",
+        "test connection success op_id={} host={} port={}",
+        op_id,
+        params.host,
+        params.port
+    );
     Ok("Connection successful".to_string())
 }
 
@@ -293,6 +373,7 @@ pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
 pub fn collect_server_info(input: ConnectionInput) -> Result<ServerInfo, String> {
     use crate::ssh::connection::{connect, SshConnectParams};
     use std::io::Read;
+    let op_id = Uuid::new_v4().to_string();
 
     let params = SshConnectParams {
         host: input.host.clone(),
@@ -308,7 +389,24 @@ pub fn collect_server_info(input: ConnectionInput) -> Result<ServerInfo, String>
         heartbeat_ms: None,
     };
 
-    let session = connect(&params)?;
+    log::info!(
+        target: "myterm::connections",
+        "collect server info start op_id={} host={} port={}",
+        op_id,
+        params.host,
+        params.port
+    );
+    let session = connect(&params).map_err(|err| {
+        log::error!(
+            target: "myterm::connections",
+            "collect server info ssh failed op_id={} host={} port={} error={}",
+            op_id,
+            params.host,
+            params.port,
+            err
+        );
+        err
+    })?;
 
     // Run a script to collect info
     let script = r#"
@@ -324,9 +422,25 @@ echo "===END==="
 "#;
 
     let mut channel = session.session.channel_session()
-        .map_err(|e| format!("Channel failed: {}", e))?;
+        .map_err(|e| {
+            log::error!(
+                target: "myterm::connections",
+                "collect server info channel failed op_id={} error={}",
+                op_id,
+                e
+            );
+            format!("Channel failed: {}", e)
+        })?;
     channel.exec(&format!("sh -c '{}'", script.replace("'", "'\\''")))
-        .map_err(|e| format!("Exec failed: {}", e))?;
+        .map_err(|e| {
+            log::error!(
+                target: "myterm::connections",
+                "collect server info exec failed op_id={} error={}",
+                op_id,
+                e
+            );
+            format!("Exec failed: {}", e)
+        })?;
 
     let mut output = String::new();
     channel.read_to_string(&mut output).ok();
@@ -344,12 +458,23 @@ echo "===END==="
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
-    Ok(ServerInfo {
+    let info = ServerInfo {
         os,
         cpu_cores,
         memory_total: mem_kb * 1024, // KB to bytes
         disk_total: disk_bytes,
-    })
+    };
+    log::info!(
+        target: "myterm::connections",
+        "collect server info success op_id={} os={} cpu_cores={} memory_total={} disk_total={}",
+        op_id,
+        info.os,
+        info.cpu_cores,
+        info.memory_total,
+        info.disk_total
+    );
+
+    Ok(info)
 }
 
 fn extract_info(output: &str, section: &str) -> Option<String> {

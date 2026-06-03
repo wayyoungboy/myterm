@@ -4,8 +4,8 @@ MyTerm is a Tauri + React desktop SSH manager with XTerminal-inspired workflows.
 
 - SSH connection management.
 - SSH terminal tabs.
-- SFTP file management over an active SSH session.
-- Server monitoring over an active SSH session.
+- SFTP file management launched from an active terminal tab, using independent SSH sessions for blocking file operations.
+- Server monitoring launched from an active terminal tab, using independent SSH sessions for monitor collection.
 
 Additional tool views are available in the app shell:
 
@@ -47,6 +47,14 @@ npm run tauri dev
 Development mode starts a local Vite server, so it occupies a localhost port. Packaged desktop builds do not need that development port.
 
 The app does not need to listen on a public port for normal SSH terminal, SFTP, or monitoring workflows. Local listening is only needed for development server mode and features that intentionally expose a listener, such as local or dynamic port forwarding.
+
+## Logs
+
+The desktop app writes runtime logs to the Tauri app data directory as `myterm.log`. The log includes startup, connection CRUD, SSH connect/disconnect, SFTP operations, monitor fetches, and port-forward lifecycle events with operation IDs and elapsed times.
+
+Default level is `info`. Use `MYTERM_LOG=debug` or `MYTERM_LOG=trace` before launching the app when deeper troubleshooting is needed.
+
+Logs intentionally do not record passwords, private key contents, or terminal input bytes.
 
 ## Verification
 

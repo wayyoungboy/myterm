@@ -1,8 +1,8 @@
 use crate::terminal::{TerminalManager, TerminalSession};
 use crate::terminal::pty::open_shell;
-use crate::ssh::connection::{connect, SshConnectParams};
+use crate::ssh::connection::connect;
 use crate::db::DbConn;
-use crate::crypto::decrypt_password;
+use crate::commands::ssh_params::load_ssh_params;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use parking_lot::Mutex;
@@ -15,91 +15,103 @@ pub fn connect_terminal(
     app_handle: AppHandle,
     connection_id: String,
 ) -> Result<String, String> {
-    let (host, port, auth_type, username, password_enc, key_path, timeout_ms, init_command, init_path, heartbeat_ms) = {
-        let conn_guard = db.0.lock().map_err(|e| e.to_string())?;
-        let mut stmt = conn_guard
-            .prepare("SELECT host, port, auth_type, username, password_enc, key_path, timeout_ms, init_command, init_path, heartbeat_ms FROM connections WHERE id = ?1")
-            .map_err(|e| e.to_string())?;
+    let op_id = uuid::Uuid::new_v4().to_string();
+    let started = std::time::Instant::now();
+    log::info!(
+        target: "myterm::terminal",
+        "connect start op_id={} connection_id={}",
+        op_id,
+        connection_id
+    );
 
-        stmt.query_row(rusqlite::params![connection_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i32>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<i32>>(6)?,
-                row.get::<_, Option<String>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<i32>>(9)?,
-            ))
-        })
-        .map_err(|e| format!("Connection not found: {}", e))?
-    };
+    let result = (|| {
+        let params = load_ssh_params(&db, &connection_id)?;
+        log::info!(
+            target: "myterm::terminal",
+            "ssh connect start op_id={} connection_id={} host={} port={} username={} auth_type={}",
+            op_id,
+            connection_id,
+            params.host,
+            params.port,
+            params.username,
+            params.auth_type
+        );
+        let ssh_session = connect(&params)?;
+        let session_ref = ssh_session.session.clone();
+        let mut channel = open_shell(&session_ref)?;
+        let session_id = uuid::Uuid::new_v4().to_string();
 
-    // Decrypt password
-    let password = if let Some(ref enc) = password_enc {
-        if !enc.is_empty() {
-            let master = crate::crypto::get_master_password();
-            decrypt_password(enc, &master).ok()
-        } else {
-            None
+        // Send init command if configured. Do not log command content.
+        if let Some(ref cmd) = params.init_command {
+            if !cmd.is_empty() {
+                use std::io::Write;
+                channel.write_all(cmd.as_bytes()).ok();
+                channel.write_all(b"\n").ok();
+                channel.flush().ok();
+                log::info!(
+                    target: "myterm::terminal",
+                    "init command sent op_id={} session_id={}",
+                    op_id,
+                    session_id
+                );
+            }
         }
-    } else {
-        None
-    };
 
-    let params = SshConnectParams {
-        host,
-        port: port as u16,
-        username,
-        auth_type,
-        password,
-        key_path,
-        timeout_ms: timeout_ms.map(|t| t as u32),
-        proxy_jump_id: None,
-        init_command: init_command.clone(),
-        init_path: init_path.clone(),
-        heartbeat_ms,
-    };
+        // Send init path if configured.
+        if let Some(ref path) = params.init_path {
+            if !path.is_empty() {
+                use std::io::Write;
+                channel.write_all(format!("cd {}\n", path).as_bytes()).ok();
+                channel.flush().ok();
+                log::info!(
+                    target: "myterm::terminal",
+                    "init path sent op_id={} session_id={} path={}",
+                    op_id,
+                    session_id,
+                    path
+                );
+            }
+        }
 
-    let ssh_session = connect(&params)?;
-    let session_ref = ssh_session.session.clone();
-    let mut channel = open_shell(&session_ref)?;
-    let session_id = uuid::Uuid::new_v4().to_string();
+        tm.insert(TerminalSession {
+            id: session_id.clone(),
+            connection_id: connection_id.clone(),
+            _ssh: ssh_session,       // Keep TCP stream alive
+            session: session_ref,
+            channel: Arc::new(Mutex::new(channel)),
+            running: Arc::new(AtomicBool::new(true)),
+        });
 
-    // Send init command if configured
-    if let Some(ref cmd) = init_command {
-        if !cmd.is_empty() {
-            use std::io::Write;
-            channel.write_all(cmd.as_bytes()).ok();
-            channel.write_all(b"\n").ok();
-            channel.flush().ok();
+        // Start the background reader thread
+        tm.start_reader(&session_id, app_handle)?;
+
+        Ok(session_id)
+    })();
+
+    match result {
+        Ok(session_id) => {
+            log::info!(
+                target: "myterm::terminal",
+                "connect success op_id={} connection_id={} session_id={} elapsed_ms={}",
+                op_id,
+                connection_id,
+                session_id,
+                started.elapsed().as_millis()
+            );
+            Ok(session_id)
+        }
+        Err(err) => {
+            log::error!(
+                target: "myterm::terminal",
+                "connect failed op_id={} connection_id={} elapsed_ms={} error={}",
+                op_id,
+                connection_id,
+                started.elapsed().as_millis(),
+                err
+            );
+            Err(err)
         }
     }
-
-    // Send init path if configured
-    if let Some(ref path) = init_path {
-        if !path.is_empty() {
-            use std::io::Write;
-            channel.write_all(format!("cd {}\n", path).as_bytes()).ok();
-            channel.flush().ok();
-        }
-    }
-
-    tm.insert(TerminalSession {
-        id: session_id.clone(),
-        _ssh: ssh_session,       // Keep TCP stream alive
-        session: session_ref,
-        channel: Arc::new(Mutex::new(channel)),
-        running: Arc::new(AtomicBool::new(true)),
-    });
-
-    // Start the background reader thread
-    tm.start_reader(&session_id, app_handle)?;
-
-    Ok(session_id)
 }
 
 #[tauri::command]
@@ -107,6 +119,11 @@ pub fn disconnect_terminal(
     tm: State<'_, TerminalManager>,
     session_id: String,
 ) -> Result<(), String> {
+    log::info!(
+        target: "myterm::terminal",
+        "disconnect session_id={}",
+        session_id
+    );
     tm.remove(&session_id);
     Ok(())
 }

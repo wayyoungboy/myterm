@@ -12,6 +12,7 @@ use crate::ssh::SshSession;
 
 pub struct TerminalSession {
     pub id: String,
+    pub connection_id: String,
     pub _ssh: SshSession,       // Keep the SSH session + TCP stream alive
     pub session: Session,       // Clone reference for quick access
     pub channel: Arc<Mutex<Channel>>,
@@ -34,20 +35,49 @@ impl TerminalManager {
         sessions.get(id).map(|s| s.session.clone())
     }
 
+    pub fn get_connection_id(&self, id: &str) -> Option<String> {
+        let sessions = self.sessions.lock();
+        sessions.get(id).map(|s| s.connection_id.clone())
+    }
+
     pub fn insert(&self, session: TerminalSession) {
         let mut sessions = self.sessions.lock();
+        log::info!(
+            target: "myterm::terminal",
+            "session inserted session_id={} connection_id={}",
+            session.id,
+            session.connection_id
+        );
         sessions.insert(session.id.clone(), session);
     }
 
     pub fn remove(&self, id: &str) {
         let mut sessions = self.sessions.lock();
         if let Some(session) = sessions.remove(id) {
+            log::info!(
+                target: "myterm::terminal",
+                "session remove start session_id={} connection_id={}",
+                session.id,
+                session.connection_id
+            );
             // Signal the reader thread to stop
             session.running.store(false, Ordering::SeqCst);
             // Close the channel
             let mut channel = session.channel.lock();
             let _ = channel.close();
             let _ = channel.wait_close();
+            log::info!(
+                target: "myterm::terminal",
+                "session removed session_id={} connection_id={}",
+                session.id,
+                session.connection_id
+            );
+        } else {
+            log::warn!(
+                target: "myterm::terminal",
+                "session remove requested for missing session_id={}",
+                id
+            );
         }
     }
 
@@ -93,6 +123,11 @@ impl TerminalManager {
                             // Non-blocking 0 can mean no data; check if channel is truly closed
                             if channel.eof() {
                                 drop(channel);
+                                log::info!(
+                                    target: "myterm::terminal",
+                                    "reader eof session_id={}",
+                                    session_id
+                                );
                                 let _ = app_handle.emit(&format!("terminal-exit-{}", session_id), ());
                                 break;
                             }
@@ -115,6 +150,11 @@ impl TerminalManager {
                         }
                         Err(_) => {
                             drop(channel);
+                            log::warn!(
+                                target: "myterm::terminal",
+                                "reader read error session_id={}",
+                                session_id
+                            );
                             let _ = app_handle.emit(&format!("terminal-exit-{}", session_id), ());
                             break;
                         }

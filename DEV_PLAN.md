@@ -58,6 +58,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 分组选择 | ✅ | `getGroups` 接入表单 |
 | 交互式认证入口 | ✅ | 表单入口已恢复 |
 | SSH/SFTP/Monitor tab 路由 | ✅ | 按 tab type 渲染真实视图 |
+| SFTP/Monitor session 隔离 | ✅ | 文件和监控操作使用独立 SSH 连接，避免影响终端 reader |
 | 侧边栏工具入口 | ✅ | Notes/AI/Forward/Telnet/Commands/Settings |
 | 批量操作 | ⚠️ | 后续增强 |
 | ProxyJump / 出站代理链路 | ⚠️ | 字段和 UI 存在，后端链路未完成 |
@@ -163,6 +164,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 ## 第六阶段：稳定性和发布
 
+- [x] 应用级文件日志（`myterm.log`）
+- [x] 关键操作追溯 ID（SSH/SFTP/Monitor 等）
 - [ ] 连接断线自动重连
 - [ ] 会话录制与回放
 - [ ] 多跳代理连接（ProxyJump 链）
@@ -179,6 +182,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - [x] 清理 Rust warning
 - [x] 统一终端写入/resize 的 Tauri 前端封装
+- [x] SFTP/Monitor 从共享 SSH session 改为独立 SSH session
 - [ ] CSS 变量和间距规范继续收敛
 - [ ] Tauri 权限配置最小化复核
 - [ ] 端口转发线程生命周期重构

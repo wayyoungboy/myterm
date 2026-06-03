@@ -1,4 +1,5 @@
 pub mod connections;
+pub mod ssh_params;
 pub mod terminal;
 pub mod sftp;
 pub mod monitor;

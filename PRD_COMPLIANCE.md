@@ -43,6 +43,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 远程读写文件 | ✅ | `sftp_read_file` / `sftp_write_file` |
 | 远程删除/重命名/建目录 | ✅ | `sftp_remove_file` / `sftp_rename` / `sftp_mkdir` |
 | SFTP tab 自动建 session | ✅ | `SftpView` 调用 `connectTerminal` |
+| SFTP 独立 SSH 会话 | ✅ | 文件操作使用独立 SSH 连接，避免影响终端 reader |
 | 本地目录列表 | ✅ | `list_local_dir` |
 | 本地写入/删除/重命名/建目录 | ✅ | `local_fs.rs` |
 | 双栏 UI | ✅ | 本地/远程面板 |
@@ -56,6 +57,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 需求项 | 状态 | 说明 |
 | --- | --- | --- |
 | Monitor tab 自动建 session | ✅ | `MonitorView` 调用 `connectTerminal` |
+| Monitor 独立 SSH 会话 | ✅ | 监控采集使用独立 SSH 连接，不切换终端 session blocking mode |
 | 系统信息 | ✅ | hostname / OS / uptime / load avg |
 | CPU 总使用率 | ✅ | `/proc/stat` 前后快照 |
 | 每核心 CPU | ✅ | UI 显示 per-core 使用率 |
@@ -82,6 +84,16 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | Telnet | ⚠️ | 基础 TCP/Telnet I/O 存在，未完整验收 |
 | RDP | ⚠️ | 外部客户端 launcher 存在，未完整验收 |
 | 云同步 | ❌ | 未实现 |
+
+## 日志和追溯
+
+| 需求项 | 状态 | 说明 |
+| --- | --- | --- |
+| 文件日志 | ✅ | `myterm.log` 写入 Tauri app data 目录 |
+| 操作关联 ID | ✅ | SSH/SFTP/Monitor 等关键操作带 `op_id` |
+| 生命周期日志 | ✅ | 启动、连接 CRUD、SSH connect/disconnect、SFTP、Monitor、Port Forward |
+| 敏感信息保护 | ✅ | 不记录密码、私钥内容、终端输入字节 |
+| 可调日志等级 | ✅ | `MYTERM_LOG=debug/trace` |
 
 ## 验证
 

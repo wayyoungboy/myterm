@@ -163,9 +163,6 @@ echo "===END==="
 "#;
 
 pub fn fetch_monitor_data(session: &Session) -> Result<MonitorData, String> {
-    // Temporarily switch to blocking mode for synchronous read
-    session.set_blocking(true);
-
     let script = MONITOR_SCRIPT.replace("\r\n", "\n");
     let mut channel = session.channel_session()
         .map_err(|e| format!("Channel open failed: {}", e))?;
@@ -176,9 +173,6 @@ pub fn fetch_monitor_data(session: &Session) -> Result<MonitorData, String> {
     channel.read_to_string(&mut output)
         .map_err(|e| format!("Read failed: {}", e))?;
     channel.wait_close().ok();
-
-    // Restore non-blocking mode for terminal reader
-    session.set_blocking(false);
 
     parse_monitor_output(&output)
 }
