@@ -109,16 +109,28 @@ export interface MonitorData {
   net_tx: number;
   net_rx_rate: number;
   net_tx_rate: number;
+  net_interfaces: string[];
   disk_partitions: DiskPartition[];
   gpu: GpuData | null;
   uptime: number;
   hostname: string;
   os_info: string;
   load_avg: [number, number, number];
+  top_cpu_processes: ProcessInfo[];
+  top_mem_processes: ProcessInfo[];
+}
+
+export interface ProcessInfo {
+  pid: number;
+  cpu: number;
+  memory: number;
+  command: string;
+  args: string;
 }
 
 export interface DiskPartition {
   mount: string;
+  fs_type: string;
   total: number;
   used: number;
   read_rate: number;

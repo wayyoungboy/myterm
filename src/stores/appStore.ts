@@ -33,6 +33,10 @@ interface AppState {
   // Selected connection for SFTP/monitor
   selectedConnectionId: string | null;
   setSelectedConnectionId: (id: string | null) => void;
+
+  // Monitor sidebar
+  monitorSidebarVisible: boolean;
+  toggleMonitorSidebar: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -71,4 +75,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   selectedConnectionId: null,
   setSelectedConnectionId: (id) => set({ selectedConnectionId: id }),
+
+  monitorSidebarVisible: false,
+  toggleMonitorSidebar: () => set((s) => ({ monitorSidebarVisible: !s.monitorSidebarVisible })),
 }));

@@ -288,6 +288,87 @@ pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
     Ok("Connection successful".to_string())
 }
 
+/// Collect server hardware info (OS, CPU cores, memory, disk) via SSH
+#[tauri::command]
+pub fn collect_server_info(input: ConnectionInput) -> Result<ServerInfo, String> {
+    use crate::ssh::connection::{connect, SshConnectParams};
+    use std::io::Read;
+
+    let params = SshConnectParams {
+        host: input.host.clone(),
+        port: input.port.unwrap_or(22) as u16,
+        username: input.username.clone().unwrap_or_else(|| "root".to_string()),
+        auth_type: input.auth_type.clone().unwrap_or_else(|| "password".to_string()),
+        password: input.password.clone(),
+        key_path: input.key_path.clone(),
+        timeout_ms: input.timeout_ms.map(|t| t as u32),
+        proxy_jump_id: None,
+        init_command: None,
+        init_path: None,
+        heartbeat_ms: None,
+    };
+
+    let session = connect(&params)?;
+
+    // Run a script to collect info
+    let script = r#"
+echo "===OS==="
+cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || uname -srm
+echo "===CPU==="
+nproc 2>/dev/null || echo "1"
+echo "===MEM==="
+grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0"
+echo "===DISK==="
+df -B1 / 2>/dev/null | tail -1 | awk '{print $2}' || echo "0"
+echo "===END==="
+"#;
+
+    let mut channel = session.session.channel_session()
+        .map_err(|e| format!("Channel failed: {}", e))?;
+    channel.exec(&format!("sh -c '{}'", script.replace("'", "'\\''")))
+        .map_err(|e| format!("Exec failed: {}", e))?;
+
+    let mut output = String::new();
+    channel.read_to_string(&mut output).ok();
+    channel.wait_close().ok();
+
+    // Parse output
+    let os = extract_info(&output, "OS").unwrap_or_default();
+    let cpu_cores: u32 = extract_info(&output, "CPU")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1);
+    let mem_kb: u64 = extract_info(&output, "MEM")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let disk_bytes: u64 = extract_info(&output, "DISK")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    Ok(ServerInfo {
+        os,
+        cpu_cores,
+        memory_total: mem_kb * 1024, // KB to bytes
+        disk_total: disk_bytes,
+    })
+}
+
+fn extract_info(output: &str, section: &str) -> Option<String> {
+    let marker = format!("==={}===", section);
+    let start = output.find(&marker)? + marker.len();
+    let rest = output[start..].trim_start_matches('\n');
+    let end = rest.find("\n===").unwrap_or(rest.len());
+    let val = rest[..end].trim().to_string();
+    if val.is_empty() { None } else { Some(val) }
+}
+
+#[derive(serde::Serialize)]
+pub struct ServerInfo {
+    pub os: String,
+    pub cpu_cores: u32,
+    pub memory_total: u64,
+    pub disk_total: u64,
+}
+
 #[tauri::command]
 pub fn search_connections(db: State<'_, DbConn>, query: String) -> Result<Vec<ConnectionResponse>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;

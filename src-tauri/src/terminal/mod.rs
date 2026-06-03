@@ -8,11 +8,13 @@ use ssh2::{Session, Channel};
 use std::io::{Read, Write};
 use std::thread;
 use tauri::{AppHandle, Emitter};
+use crate::ssh::SshSession;
 
 pub struct TerminalSession {
     pub id: String,
     pub connection_id: String,
-    pub session: Session,
+    pub _ssh: SshSession,       // Keep the SSH session + TCP stream alive
+    pub session: Session,       // Clone reference for quick access
     pub channel: Arc<Mutex<Channel>>,
     pub running: Arc<AtomicBool>,
 }
@@ -89,20 +91,26 @@ impl TerminalManager {
                     let mut channel = channel.lock();
                     match channel.read(&mut buf) {
                         Ok(0) => {
+                            // Non-blocking 0 can mean no data; check if channel is truly closed
+                            if channel.eof() {
+                                drop(channel);
+                                let _ = app_handle.emit(&format!("terminal-exit-{}", session_id), ());
+                                break;
+                            }
                             drop(channel);
-                            let _ = app_handle.emit(&format!("terminal-exit-{}", session_id), ());
-                            break;
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                            continue;
                         }
                         Ok(n) => {
                             let data = buf[..n].to_vec();
-                            drop(channel); // Release lock before emitting
+                            drop(channel);
                             let _ = app_handle.emit(
                                 &format!("terminal-output-{}", session_id),
                                 data,
                             );
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            drop(channel); // Release lock before sleeping
+                            drop(channel);
                             std::thread::sleep(std::time::Duration::from_millis(10));
                             continue;
                         }

@@ -19,14 +19,19 @@ pub struct SshConnectParams {
 }
 
 fn connect_direct(host: &str, port: u16, timeout_ms: u32) -> Result<TcpStream, String> {
-    let addr = format!("{}:{}", host, port);
+    use std::net::ToSocketAddrs;
+
     let timeout = Duration::from_millis(timeout_ms as u64);
 
-    let tcp = TcpStream::connect_timeout(
-        &addr.parse().map_err(|e| format!("Invalid address: {}", e))?,
-        timeout,
-    )
-    .map_err(|e| format!("TCP connect failed: {}", e))?;
+    // Resolve hostname (supports both IP addresses and domain names)
+    let addr = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("Invalid address: {}", e))?
+        .next()
+        .ok_or_else(|| format!("No addresses found for {}:{}", host, port))?;
+
+    let tcp = TcpStream::connect_timeout(&addr, timeout)
+        .map_err(|e| format!("TCP connect failed: {}", e))?;
 
     tcp.set_read_timeout(Some(timeout)).ok();
     tcp.set_write_timeout(Some(timeout)).ok();

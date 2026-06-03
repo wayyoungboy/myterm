@@ -193,6 +193,11 @@ function NetworkCard({ data }: { data: MonitorData }) {
           <span className="text-[10px] text-[var(--text-muted)]">Total: {formatBytes(data.net_tx)}</span>
         </div>
       </div>
+      {data.net_interfaces.length > 0 && (
+        <div className="text-[10px] text-[var(--text-muted)] truncate">
+          Interfaces: {data.net_interfaces.join(', ')}
+        </div>
+      )}
     </Card>
   );
 }
@@ -203,7 +208,7 @@ function DiskCard({ partitions }: { partitions: DiskPartition[] }) {
       <div className="flex flex-col gap-2.5">
         {partitions.map((p) => (
           <div key={p.mount} className="flex flex-col gap-1">
-            <Bar label={p.mount} used={p.used} total={p.total} />
+            <Bar label={`${p.mount} (${p.fs_type})`} used={p.used} total={p.total} />
             {(p.read_rate > 0 || p.write_rate > 0) && (
               <div className="flex gap-3 text-[10px] text-[var(--text-muted)]">
                 <span>R: {formatRate(p.read_rate)}</span>

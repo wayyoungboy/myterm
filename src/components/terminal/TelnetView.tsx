@@ -6,17 +6,17 @@ import { connectTelnet, telnetWrite, disconnectTelnet } from '../../utils/tauri'
 
 import '@xterm/xterm/css/xterm.css';
 
-const CATPPUCCIN_MOCHA = {
-  background: '#1e1e2e',
-  foreground: '#cdd6f4',
-  cursor: '#f5e0dc',
-  cursorAccent: '#1e1e2e',
-  selectionBackground: '#585b7066',
-  black: '#45475a', red: '#f38ba8', green: '#a6e3a1', yellow: '#f9e2af',
-  blue: '#89b4fa', magenta: '#f5c2e7', cyan: '#94e2d5', white: '#bac2de',
-  brightBlack: '#585b70', brightRed: '#f38ba8', brightGreen: '#a6e3a1',
-  brightYellow: '#f9e2af', brightBlue: '#89b4fa', brightMagenta: '#f5c2e7',
-  brightCyan: '#94e2d5', brightWhite: '#a6adc8',
+const TERMINAL_THEME = {
+  background: '#000000',
+  foreground: '#e5e5e5',
+  cursor: '#3b82f6',
+  cursorAccent: '#000000',
+  selectionBackground: '#3b82f640',
+  black: '#171717', red: '#ef4444', green: '#22c55e', yellow: '#eab308',
+  blue: '#3b82f6', magenta: '#a855f7', cyan: '#06b6d4', white: '#d4d4d4',
+  brightBlack: '#404040', brightRed: '#f87171', brightGreen: '#4ade80',
+  brightYellow: '#facc15', brightBlue: '#60a5fa', brightMagenta: '#c084fc',
+  brightCyan: '#22d3ee', brightWhite: '#ffffff',
 };
 
 export function TelnetView() {
@@ -35,7 +35,7 @@ export function TelnetView() {
   useEffect(() => {
     if (!terminalRef.current || termInstance.current) return;
     const terminal = new Terminal({
-      theme: CATPPUCCIN_MOCHA,
+      theme: TERMINAL_THEME,
       fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, monospace",
       fontSize: 14, cursorBlink: true, scrollback: 10000,
     });

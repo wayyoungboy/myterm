@@ -65,7 +65,8 @@ pub fn connect_terminal(
     };
 
     let ssh_session = connect(&params)?;
-    let mut channel = open_shell(&ssh_session.session)?;
+    let session_ref = ssh_session.session.clone();
+    let mut channel = open_shell(&session_ref)?;
     let session_id = uuid::Uuid::new_v4().to_string();
 
     // Send init command if configured
@@ -90,7 +91,8 @@ pub fn connect_terminal(
     tm.insert(TerminalSession {
         id: session_id.clone(),
         connection_id,
-        session: ssh_session.session,
+        _ssh: ssh_session,       // Keep TCP stream alive
+        session: session_ref,
         channel: Arc::new(Mutex::new(channel)),
         running: Arc::new(AtomicBool::new(true)),
     });

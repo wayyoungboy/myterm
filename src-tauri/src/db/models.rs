@@ -124,6 +124,7 @@ pub struct MonitorData {
     pub net_tx: u64,
     pub net_rx_rate: u64,
     pub net_tx_rate: u64,
+    pub net_interfaces: Vec<String>,
     pub disk_partitions: Vec<DiskPartition>,
     pub gpu: Option<GpuData>,
     pub uptime: u64,
@@ -146,6 +147,7 @@ pub struct ProcessInfo {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DiskPartition {
     pub mount: String,
+    pub fs_type: String,
     pub total: u64,
     pub used: u64,
     pub read_rate: u64,

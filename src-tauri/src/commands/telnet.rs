@@ -31,13 +31,17 @@ pub fn connect_telnet(
     port: Option<u16>,
 ) -> Result<String, String> {
     let port = port.unwrap_or(23);
-    let addr = format!("{}:{}", host, port);
 
-    let stream = TcpStream::connect_timeout(
-        &addr.parse().map_err(|e| format!("Invalid address: {}", e))?,
-        std::time::Duration::from_secs(10),
-    )
-    .map_err(|e| format!("Telnet connect failed: {}", e))?;
+    // Resolve hostname (supports both IP addresses and domain names)
+    use std::net::ToSocketAddrs;
+    let addr = (host.as_str(), port)
+        .to_socket_addrs()
+        .map_err(|e| format!("Invalid address: {}", e))?
+        .next()
+        .ok_or_else(|| format!("No addresses found for {}:{}", host, port))?;
+
+    let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))
+        .map_err(|e| format!("Telnet connect failed: {}", e))?;
 
     stream.set_read_timeout(Some(std::time::Duration::from_millis(100))).ok();
 
