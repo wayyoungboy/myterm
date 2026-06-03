@@ -311,6 +311,8 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
   }, [cleanupTerminalIO, clearSessionFromTab, sessionId]);
 
   const showForm = !sessionId && !connectionId;
+  const reconnectConnectionId = connectionId || activeTab?.connectionId || null;
+  const showSessionBar = !showForm;
 
   return (
     <div className="flex flex-col h-full w-full" style={{ background: 'var(--bg-primary)' }}>
@@ -371,10 +373,25 @@ export function TerminalView({ connectionId }: TerminalViewProps) {
         </div>
       )}
 
-      {sessionId && !connectionId && (
+      {showSessionBar && (
         <div className="flex items-center justify-between px-3 py-1.5 text-xs border-b" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-secondary)' }}>
-          <span>Connected &mdash; <span style={{ color: 'var(--accent)' }}>{sessionId.slice(0, 8)}</span></span>
-          <button className="btn btn-danger text-xs py-1 px-2" onClick={handleDisconnect}>Disconnect</button>
+          {sessionId ? (
+            <>
+              <span>Connected &mdash; <span style={{ color: 'var(--accent)' }}>{sessionId.slice(0, 8)}</span></span>
+              <button className="btn btn-danger text-xs py-1 px-2" onClick={handleDisconnect}>Disconnect</button>
+            </>
+          ) : (
+            <>
+              <span>Disconnected</span>
+              <button
+                className="btn btn-primary text-xs py-1 px-2"
+                onClick={() => reconnectConnectionId && handleConnect(reconnectConnectionId)}
+                disabled={!reconnectConnectionId || connecting}
+              >
+                {connecting ? 'Reconnecting...' : 'Reconnect'}
+              </button>
+            </>
+          )}
         </div>
       )}
 

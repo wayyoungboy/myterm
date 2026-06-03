@@ -33,6 +33,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 多 tab | ✅ | `TabBar` + Zustand store |
 | tab 切换保活 | ✅ | 组件 unmount 不再断开 SSH |
 | tab 关闭释放 session | ✅ | `TabBar` 调用 `disconnect_terminal` |
+| 断线恢复 | ✅ | EOF/read error 清空旧 session，终端状态栏提供显式 Reconnect |
 | Resize | ✅ | xterm fit + `terminal_resize` |
 | 初始化命令/路径 | ✅ | 后端连接后写入 shell |
 | 快捷命令写入当前终端 | ✅ | 支持变量展开后写入 SSH session |

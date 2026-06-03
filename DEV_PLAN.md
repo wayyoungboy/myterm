@@ -33,6 +33,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 1.3 | 会话保持 | ✅ | tab 切换不再断开 SSH |
 | 1.4 | 非阻塞读取 | ✅ | reader 线程 EOF 检测 |
 | 1.4.1 | 断线会话清理 | ✅ | EOF/read error 会清理后端 session 并清空前端 tab sessionId |
+| 1.4.2 | 显式重连 | ✅ | 断线后终端状态栏显示 Reconnect，避免隐式重连循环 |
 | 1.5 | 域名 DNS 解析 | ✅ | ToSocketAddrs 替换 parse |
 | 1.6 | 多标签独立实例 | ✅ | 每个 tab 独立 session |
 | 1.7 | 连接状态显示 | ✅ | StatusBar 事件驱动 |
@@ -170,7 +171,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [x] 应用级文件日志（`myterm.log`）
 - [x] 关键操作追溯 ID（SSH/SFTP/Monitor 等）
 - [x] 本地文件操作日志（list/read/write/remove/rename/mkdir）
-- [ ] 连接断线自动重连
+- [x] 连接断线后显式重连入口
 - [ ] 会话录制与回放
 - [x] HTTP CONNECT / SOCKS5 出站代理
 - [x] 多跳代理连接（ProxyJump 链）
