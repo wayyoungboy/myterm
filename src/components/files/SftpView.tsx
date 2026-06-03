@@ -20,8 +20,10 @@ import {
   sftpListDir,
   sftpReadFile,
   sftpWriteFile,
+  sftpBeginTransfer,
   sftpDownloadPath,
   sftpUploadPath,
+  sftpFinishTransfer,
   sftpCancelTransfer,
   sftpRemoveFile,
   sftpRename,
@@ -289,8 +291,14 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
         `sftp-transfer-progress-${transferId}`,
         (event) => setTransferProgress(event.payload),
       );
+      await sftpBeginTransfer(transferId);
       await action(transferId);
     } finally {
+      try {
+        await sftpFinishTransfer(transferId);
+      } catch (e) {
+        console.warn('SFTP transfer cleanup failed', e);
+      }
       unlisten?.();
       setActiveTransferId(null);
       setTransferProgress(null);

@@ -20,12 +20,20 @@ impl SftpTransferManager {
         }
     }
 
-    fn register(&self, transfer_id: &str) -> Arc<AtomicBool> {
+    fn begin(&self, transfer_id: &str) -> Arc<AtomicBool> {
         let cancel = Arc::new(AtomicBool::new(false));
         self.cancellations
             .lock()
             .insert(transfer_id.to_string(), cancel.clone());
         cancel
+    }
+
+    fn transfer_flag(&self, transfer_id: &str) -> Arc<AtomicBool> {
+        self.cancellations
+            .lock()
+            .entry(transfer_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone()
     }
 
     fn finish(&self, transfer_id: &str) {
@@ -41,6 +49,20 @@ impl SftpTransferManager {
             None => false,
         }
     }
+}
+
+#[tauri::command]
+pub fn sftp_begin_transfer(
+    transfers: State<'_, SftpTransferManager>,
+    transfer_id: String,
+) -> Result<(), String> {
+    transfers.begin(&transfer_id);
+    log::info!(
+        target: "myterm::sftp",
+        "transfer batch begin transfer_id={}",
+        transfer_id
+    );
+    Ok(())
 }
 
 #[derive(Clone, Serialize)]
@@ -149,8 +171,8 @@ pub fn sftp_download_path(
     local_parent: String,
 ) -> Result<usize, String> {
     let path = format!("{remote_path} -> {local_parent}");
-    let cancel = transfers.register(&transfer_id);
-    let result = run_sftp_op(&db, &tm, &session_id, "download_path", &path, |session| {
+    let cancel = transfers.transfer_flag(&transfer_id);
+    run_sftp_op(&db, &tm, &session_id, "download_path", &path, |session| {
         crate::ssh::sftp::download_path_with_progress(
             session,
             &remote_path,
@@ -158,9 +180,7 @@ pub fn sftp_download_path(
             &cancel,
             |progress| emit_transfer_progress(&app_handle, &transfer_id, progress),
         )
-    });
-    transfers.finish(&transfer_id);
-    result
+    })
 }
 
 #[tauri::command]
@@ -175,8 +195,8 @@ pub fn sftp_upload_path(
     remote_parent: String,
 ) -> Result<usize, String> {
     let path = format!("{local_path} -> {remote_parent}");
-    let cancel = transfers.register(&transfer_id);
-    let result = run_sftp_op(&db, &tm, &session_id, "upload_path", &path, |session| {
+    let cancel = transfers.transfer_flag(&transfer_id);
+    run_sftp_op(&db, &tm, &session_id, "upload_path", &path, |session| {
         crate::ssh::sftp::upload_path_with_progress(
             session,
             &local_path,
@@ -184,9 +204,21 @@ pub fn sftp_upload_path(
             &cancel,
             |progress| emit_transfer_progress(&app_handle, &transfer_id, progress),
         )
-    });
+    })
+}
+
+#[tauri::command]
+pub fn sftp_finish_transfer(
+    transfers: State<'_, SftpTransferManager>,
+    transfer_id: String,
+) -> Result<(), String> {
     transfers.finish(&transfer_id);
-    result
+    log::info!(
+        target: "myterm::sftp",
+        "transfer batch finish transfer_id={}",
+        transfer_id
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -279,4 +311,25 @@ pub fn sftp_chmod(
     run_sftp_op(&db, &tm, &session_id, "chmod", &path, |session| {
         crate::ssh::sftp::chmod(session, &path, &mode)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transfer_cancel_state_persists_until_batch_finish() {
+        let manager = SftpTransferManager::new();
+        let first = manager.begin("batch-transfer");
+
+        assert!(!first.load(Ordering::SeqCst));
+        assert!(manager.cancel("batch-transfer"));
+
+        let next_file = manager.transfer_flag("batch-transfer");
+        assert!(Arc::ptr_eq(&first, &next_file));
+        assert!(next_file.load(Ordering::SeqCst));
+
+        manager.finish("batch-transfer");
+        assert!(!manager.cancel("batch-transfer"));
+    }
 }
