@@ -76,9 +76,36 @@ impl TerminalManager {
     }
 
     pub fn write_to_channel(&self, id: &str, data: &[u8]) -> Result<(), String> {
-        let sessions = self.sessions.lock();
-        if let Some(session) = sessions.get(id) {
-            let mut channel = session.channel.lock();
+        let op_id = uuid::Uuid::new_v4().to_string();
+        let started = std::time::Instant::now();
+        let (channel, connection_id) = {
+            let sessions = self.sessions.lock();
+            match sessions.get(id) {
+                Some(session) => (session.channel.clone(), session.connection_id.clone()),
+                None => {
+                    log::warn!(
+                        target: "myterm::terminal",
+                        "write requested for missing session op_id={} session_id={} bytes={}",
+                        op_id,
+                        id,
+                        data.len()
+                    );
+                    return Err("Session not found".to_string());
+                }
+            }
+        };
+
+        log::debug!(
+            target: "myterm::terminal",
+            "write start op_id={} session_id={} connection_id={} bytes={}",
+            op_id,
+            id,
+            connection_id,
+            data.len()
+        );
+
+        let result = (|| {
+            let mut channel = channel.lock();
             channel
                 .write_all(data)
                 .map_err(|e| format!("Write failed: {}", e))?;
@@ -86,21 +113,101 @@ impl TerminalManager {
                 .flush()
                 .map_err(|e| format!("Flush failed: {}", e))?;
             Ok(())
-        } else {
-            Err("Session not found".to_string())
+        })();
+
+        match result {
+            Ok(()) => {
+                log::debug!(
+                    target: "myterm::terminal",
+                    "write success op_id={} session_id={} connection_id={} bytes={} elapsed_ms={}",
+                    op_id,
+                    id,
+                    connection_id,
+                    data.len(),
+                    started.elapsed().as_millis()
+                );
+                Ok(())
+            }
+            Err(err) => {
+                log::error!(
+                    target: "myterm::terminal",
+                    "write failed op_id={} session_id={} connection_id={} bytes={} elapsed_ms={} error={}",
+                    op_id,
+                    id,
+                    connection_id,
+                    data.len(),
+                    started.elapsed().as_millis(),
+                    err
+                );
+                Err(err)
+            }
         }
     }
 
     pub fn resize_channel(&self, id: &str, cols: u32, rows: u32) -> Result<(), String> {
-        let sessions = self.sessions.lock();
-        if let Some(session) = sessions.get(id) {
-            let mut channel = session.channel.lock();
-            channel
-                .request_pty_size(cols, rows, None, None)
-                .map_err(|e| format!("Resize failed: {}", e))?;
-            Ok(())
-        } else {
-            Err("Session not found".to_string())
+        let op_id = uuid::Uuid::new_v4().to_string();
+        let started = std::time::Instant::now();
+        let (channel, connection_id) = {
+            let sessions = self.sessions.lock();
+            match sessions.get(id) {
+                Some(session) => (session.channel.clone(), session.connection_id.clone()),
+                None => {
+                    log::warn!(
+                        target: "myterm::terminal",
+                        "resize requested for missing session op_id={} session_id={} cols={} rows={}",
+                        op_id,
+                        id,
+                        cols,
+                        rows
+                    );
+                    return Err("Session not found".to_string());
+                }
+            }
+        };
+
+        log::debug!(
+            target: "myterm::terminal",
+            "resize start op_id={} session_id={} connection_id={} cols={} rows={}",
+            op_id,
+            id,
+            connection_id,
+            cols,
+            rows
+        );
+
+        let result = channel
+            .lock()
+            .request_pty_size(cols, rows, None, None)
+            .map_err(|e| format!("Resize failed: {}", e));
+
+        match result {
+            Ok(()) => {
+                log::debug!(
+                    target: "myterm::terminal",
+                    "resize success op_id={} session_id={} connection_id={} cols={} rows={} elapsed_ms={}",
+                    op_id,
+                    id,
+                    connection_id,
+                    cols,
+                    rows,
+                    started.elapsed().as_millis()
+                );
+                Ok(())
+            }
+            Err(err) => {
+                log::error!(
+                    target: "myterm::terminal",
+                    "resize failed op_id={} session_id={} connection_id={} cols={} rows={} elapsed_ms={} error={}",
+                    op_id,
+                    id,
+                    connection_id,
+                    cols,
+                    rows,
+                    started.elapsed().as_millis(),
+                    err
+                );
+                Err(err)
+            }
         }
     }
 
@@ -149,13 +256,14 @@ impl TerminalManager {
                             std::thread::sleep(std::time::Duration::from_millis(10));
                             continue;
                         }
-                        Err(_) => {
+                        Err(err) => {
                             drop(channel);
                             log::warn!(
                                 target: "myterm::terminal",
-                                "reader read error session_id={} connection_id={}",
+                                "reader read error session_id={} connection_id={} error={}",
                                 session_id,
-                                connection_id
+                                connection_id,
+                                err
                             );
                             running.store(false, Ordering::SeqCst);
                             sessions_for_reader.lock().remove(&session_id);

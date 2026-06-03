@@ -69,8 +69,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 ### 运行日志
 
 - 应用启动时初始化 `myterm.log`，位于 Tauri app data 目录。
-- 日志覆盖启动、连接配置变更、SSH 连接、断开、SFTP 操作、本地文件操作、监控采集和端口转发生命周期。
+- 日志覆盖启动、连接配置变更、SSH 连接、断开、终端写入/resize 元数据、SFTP 操作、本地文件操作、监控采集和端口转发生命周期。
 - 关键操作包含 `op_id`、`session_id` / `connection_id`、目标 host/port、耗时和错误原因，便于追溯。
+- 终端写入日志只记录字节数，不记录用户输入内容；成功写入和 resize 默认为 `debug` 级别，错误使用 `error` / `warn`。
 - 默认日志等级为 `info`，可通过 `MYTERM_LOG=debug` 或 `MYTERM_LOG=trace` 提升。
 - 不记录密码、私钥内容或终端输入字节。
 

@@ -94,7 +94,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | --- | --- | --- |
 | 文件日志 | ✅ | `myterm.log` 写入 Tauri app data 目录 |
 | 操作关联 ID | ✅ | SSH/SFTP/Monitor 等关键操作带 `op_id` |
-| 生命周期日志 | ✅ | 启动、连接 CRUD、SSH connect/disconnect、SFTP、本地文件操作、Monitor、Port Forward |
+| 生命周期日志 | ✅ | 启动、连接 CRUD、SSH connect/disconnect、终端写入/resize 元数据、SFTP、本地文件操作、Monitor、Port Forward |
 | 敏感信息保护 | ✅ | 不记录密码、私钥内容、终端输入字节 |
 | 可调日志等级 | ✅ | `MYTERM_LOG=debug/trace` |
 
