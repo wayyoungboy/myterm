@@ -14,6 +14,7 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 分组字段 | ✅ | DB、命令、表单选择已支持 |
 | 密码认证 | ✅ | `ssh2::Session::userauth_password` |
 | 密钥认证 | ✅ | `userauth_pubkey_file` |
+| ssh-agent / 默认密钥 | ✅ | 密钥路径留空时尝试 agent 和默认私钥 |
 | 交互式认证入口 | ✅ | 表单入口已恢复 |
 | 连接测试 | ✅ | `test_connection` |
 | 延迟检测 | ✅ | TCP ping |

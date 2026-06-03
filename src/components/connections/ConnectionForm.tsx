@@ -135,7 +135,7 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
             <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
               <Key size={10} className="inline mr-1" />密钥路径
             </label>
-            <input className="input" value={form.key_path || ''} onChange={(e) => handleChange('key_path', e.target.value)} placeholder="~/.ssh/id_rsa" />
+            <input className="input" value={form.key_path || ''} onChange={(e) => handleChange('key_path', e.target.value)} placeholder="留空使用 ssh-agent 或 ~/.ssh/id_ed25519" />
           </div>
         ) : (
           <div>

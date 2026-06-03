@@ -6,6 +6,7 @@ MyTerm is a Tauri + React desktop SSH manager with XTerminal-inspired workflows.
 - SSH terminal tabs.
 - SFTP file management launched from an active terminal tab, using independent SSH sessions for blocking file operations.
 - Server monitoring launched from an active terminal tab, using independent SSH sessions for monitor collection.
+- SSH authentication with password, explicit private key path, ssh-agent, or default private keys such as `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`.
 
 Additional tool views are available in the app shell:
 

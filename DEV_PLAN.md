@@ -57,6 +57,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 连接表单多标签 | ✅ | 基本信息/连接设置/代理/其他 |
 | 分组选择 | ✅ | `getGroups` 接入表单 |
 | 交互式认证入口 | ✅ | 表单入口已恢复 |
+| ssh-agent / 默认密钥认证 | ✅ | 密钥路径留空时尝试 agent 和默认私钥 |
 | SSH/SFTP/Monitor tab 路由 | ✅ | 按 tab type 渲染真实视图 |
 | SFTP/Monitor session 隔离 | ✅ | 文件和监控操作使用独立 SSH 连接，避免影响终端 reader |
 | 侧边栏工具入口 | ✅ | Notes/AI/Forward/Telnet/Commands/Settings |
