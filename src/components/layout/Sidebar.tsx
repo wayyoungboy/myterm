@@ -2,13 +2,39 @@ import { useState, useEffect } from 'react';
 import { useAppStore } from '../../stores/appStore';
 import { getConnections, deleteConnection } from '../../utils/tauri';
 import type { Connection } from '../../types';
-import { Search, Plus, Terminal, Trash2, Server, Activity, ChevronRight, FolderOpen, Settings } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Terminal,
+  Trash2,
+  Server,
+  Activity,
+  ChevronRight,
+  FolderOpen,
+  Settings,
+  FileText,
+  Bot,
+  Network,
+  Radio,
+  ListChecks,
+} from 'lucide-react';
 import { ConnectionForm } from '../connections/ConnectionForm';
+import type { ViewMode } from '../../types';
+
+const TOOL_ITEMS: Array<{ view: ViewMode; label: string; icon: React.ReactNode }> = [
+  { view: 'notes', label: 'Notes', icon: <FileText size={11} /> },
+  { view: 'ai', label: 'AI', icon: <Bot size={11} /> },
+  { view: 'portforward', label: 'Forward', icon: <Network size={11} /> },
+  { view: 'telnet', label: 'Telnet', icon: <Radio size={11} /> },
+  { view: 'quickcommands', label: 'Commands', icon: <ListChecks size={11} /> },
+  { view: 'settings', label: 'Settings', icon: <Settings size={11} /> },
+];
 
 export function Sidebar() {
   const {
     sidebarCollapsed, connections, setConnections,
     addTab, setSelectedConnectionId, setView,
+    currentView,
     selectedConnectionId, setSelectedConnectionId: setSelConn,
   } = useAppStore();
 
@@ -64,6 +90,18 @@ export function Sidebar() {
           <Plus size={16} />
         </button>
         <div className="w-6 h-px" style={{ background: 'var(--border)' }} />
+        {TOOL_ITEMS.map((item) => (
+          <button
+            key={item.view}
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors hover:bg-[var(--bg-surface)]"
+            style={{ color: currentView === item.view ? 'var(--accent)' : 'var(--text-muted)' }}
+            onClick={() => setView(item.view)}
+            title={item.label}
+          >
+            {item.icon}
+          </button>
+        ))}
+        <div className="w-6 h-px" style={{ background: 'var(--border)' }} />
         {connections.slice(0, 8).map(conn => (
           <button
             key={conn.id}
@@ -117,18 +155,33 @@ export function Sidebar() {
       <div className="flex gap-1 px-3 pb-2">
         <button
           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] transition-colors hover:bg-[var(--bg-surface)]"
-          style={{ color: 'var(--text-muted)' }}
+          style={{ color: currentView === 'terminal' ? 'var(--accent)' : 'var(--text-muted)' }}
           onClick={() => setView('terminal')}
         >
           <Server size={11} /> Connections
         </button>
         <button
           className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] transition-colors hover:bg-[var(--bg-surface)]"
-          style={{ color: 'var(--text-muted)' }}
+          style={{ color: currentView === 'settings' ? 'var(--accent)' : 'var(--text-muted)' }}
           onClick={() => setView('settings')}
         >
           <Settings size={11} /> Settings
         </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1 px-3 pb-2">
+        {TOOL_ITEMS.filter((item) => item.view !== 'settings').map((item) => (
+          <button
+            key={item.view}
+            className="flex items-center justify-center gap-1 py-1.5 rounded-md text-[10px] transition-colors hover:bg-[var(--bg-surface)]"
+            style={{ color: currentView === item.view ? 'var(--accent)' : 'var(--text-muted)' }}
+            onClick={() => setView(item.view)}
+            title={item.label}
+          >
+            {item.icon}
+            <span className="truncate">{item.label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Divider */}

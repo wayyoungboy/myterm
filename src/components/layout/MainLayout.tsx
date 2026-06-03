@@ -9,6 +9,11 @@ import SftpView from '../files/SftpView';
 import { MonitorView } from '../monitor/MonitorView';
 import { SettingsView } from '../settings/SettingsView';
 import { ConnectionCenter } from '../connections/ConnectionCenter';
+import { NotesView } from '../notes/NotesView';
+import AiView from '../ai/AiView';
+import { PortForwardView } from '../portforward/PortForwardView';
+import TelnetView from '../terminal/TelnetView';
+import QuickCommandsView from '../quickcommands/QuickCommandsView';
 
 export function MainLayout() {
   const { tabs, activeTabId, currentView } = useAppStore();
@@ -31,6 +36,19 @@ export function MainLayout() {
     switch (currentView) {
       case 'settings':
         return <SettingsView />;
+      case 'notes':
+        return <NotesView />;
+      case 'ai':
+        return <AiView />;
+      case 'portforward':
+        return <PortForwardView />;
+      case 'telnet':
+        return <TelnetView />;
+      case 'quickcommands':
+        return <QuickCommandsView />;
+      case 'sftp':
+      case 'monitor':
+      case 'terminal':
       default:
         return <ConnectionCenter />;
     }
