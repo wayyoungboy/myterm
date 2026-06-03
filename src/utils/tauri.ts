@@ -53,6 +53,8 @@ export const sftpRename = (sessionId: string, src: string, dst: string) =>
   invoke('sftp_rename', { sessionId, src, dst });
 export const sftpMkdir = (sessionId: string, path: string) =>
   invoke('sftp_mkdir', { sessionId, path });
+export const sftpChmod = (sessionId: string, path: string, mode: string) =>
+  invoke('sftp_chmod', { sessionId, path, mode });
 
 // Local filesystem for SFTP two-pane view
 export const listLocalDir = (path: string) =>

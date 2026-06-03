@@ -105,9 +105,9 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 上传/下载 | ✅ | 基础文件传输 |
 | 删除/重命名/建目录 | ✅ | 本地和远程均接入 |
 | 本地文件 Tauri 命令 | ✅ | list/write/remove/rename/mkdir |
+| 远程权限管理 chmod | ✅ | 远程文件/目录支持 3/4 位八进制权限编辑 |
 | 拖拽上传 | ⚠️ | 后续增强 |
 | 批量操作 | ⚠️ | 后续增强 |
-| 权限管理 chmod | ⚠️ | 后续增强 |
 | 远程文件在线编辑 | ⚠️ | 后续增强 |
 
 ---

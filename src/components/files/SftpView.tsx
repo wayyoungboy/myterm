@@ -21,6 +21,7 @@ import {
   sftpRemoveFile,
   sftpRename,
   sftpMkdir,
+  sftpChmod,
   connectTerminal,
   listLocalDir,
   writeLocalFile,
@@ -128,6 +129,8 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
   const [renameValue, setRenameValue] = useState('');
   const [mkdirTarget, setMkdirTarget] = useState<PanelSide | null>(null);
   const [mkdirValue, setMkdirValue] = useState('');
+  const [chmodTarget, setChmodTarget] = useState<SftpEntry | null>(null);
+  const [chmodValue, setChmodValue] = useState('');
 
   // Loading overlay for upload/download
   const [transferLoading, setTransferLoading] = useState(false);
@@ -373,6 +376,31 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
       alert('Mkdir failed: ' + (e?.toString?.() ?? e));
     }
     setMkdirTarget(null);
+  };
+
+  const startChmod = () => {
+    const entry = ctxMenu.entry;
+    if (!entry || ctxSide !== 'remote') return;
+    setCtxMenu(initialCtx);
+    setChmodTarget(entry);
+    setChmodValue(entry.permissions.padStart(3, '0').slice(-4));
+  };
+
+  const confirmChmod = async () => {
+    if (!chmodTarget) return;
+    const mode = chmodValue.trim();
+    if (!/^[0-7]{3,4}$/.test(mode)) {
+      alert('Mode must be a 3 or 4 digit octal value, for example 644 or 0755.');
+      return;
+    }
+
+    try {
+      await sftpChmod(sessionId, chmodTarget.path, mode);
+      await loadRemote(remotePath);
+      setChmodTarget(null);
+    } catch (e: any) {
+      alert('Chmod failed: ' + (e?.toString?.() ?? e));
+    }
   };
 
   // ---- render helpers ----
@@ -621,6 +649,12 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
                 <Edit size={14} />
                 <span>Rename</span>
               </div>
+              {ctxSide === 'remote' && (
+                <div className="context-menu-item" onClick={startChmod}>
+                  <Edit size={14} />
+                  <span>Permissions</span>
+                </div>
+              )}
               <div className="context-menu-divider" />
               <div
                 className="context-menu-item text-[var(--error)]"
@@ -694,6 +728,34 @@ export default function SftpView({ sessionId: sessionIdProp }: SftpViewProps) {
               </button>
               <button className="btn btn-primary" onClick={confirmMkdir}>
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chmod modal */}
+      {chmodTarget && (
+        <div className="modal-overlay" onClick={() => setChmodTarget(null)}>
+          <div className="modal animate-slide-in" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-title">Permissions</div>
+            <div className="text-xs mb-2 text-[var(--text-secondary)] truncate">
+              {chmodTarget.path}
+            </div>
+            <input
+              className="input mb-4 font-mono"
+              placeholder="755"
+              value={chmodValue}
+              onChange={(e) => setChmodValue(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && confirmChmod()}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button className="btn btn-secondary" onClick={() => setChmodTarget(null)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" onClick={confirmChmod}>
+                Apply
               </button>
             </div>
           </div>

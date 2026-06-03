@@ -1,5 +1,5 @@
 use crate::db::models::SftpEntry;
-use ssh2::Session;
+use ssh2::{FileStat, Session};
 
 pub fn list_dir(session: &Session, path: &str) -> Result<Vec<SftpEntry>, String> {
     let sftp = session
@@ -111,6 +111,40 @@ pub fn mkdir(session: &Session, path: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub fn chmod(session: &Session, path: &str, mode: &str) -> Result<(), String> {
+    let mode = parse_chmod_mode(mode)?;
+    let sftp = session
+        .sftp()
+        .map_err(|e| format!("SFTP init failed: {}", e))?;
+    sftp.setstat(
+        std::path::Path::new(path),
+        FileStat {
+            size: None,
+            uid: None,
+            gid: None,
+            perm: Some(mode),
+            atime: None,
+            mtime: None,
+        },
+    )
+    .map_err(|e| format!("Chmod failed: {}", e))?;
+    Ok(())
+}
+
+fn parse_chmod_mode(mode: &str) -> Result<u32, String> {
+    let trimmed = mode.trim();
+    if !(trimmed.len() == 3 || trimmed.len() == 4) {
+        return Err("Mode must be a 3 or 4 digit octal value".to_string());
+    }
+    if !trimmed.chars().all(|ch| ('0'..='7').contains(&ch)) {
+        return Err("Mode must contain only octal digits 0-7".to_string());
+    }
+
+    let parsed =
+        u32::from_str_radix(trimmed, 8).map_err(|e| format!("Mode parse failed: {}", e))?;
+    Ok(parsed & 0o7777)
+}
+
 #[allow(dead_code)]
 pub fn stat(session: &Session, path: &str) -> Result<ssh2::FileStat, String> {
     let sftp = session
@@ -118,4 +152,30 @@ pub fn stat(session: &Session, path: &str) -> Result<ssh2::FileStat, String> {
         .map_err(|e| format!("SFTP init failed: {}", e))?;
     sftp.stat(std::path::Path::new(path))
         .map_err(|e| format!("Stat failed: {}", e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_three_digit_octal_mode() {
+        assert_eq!(parse_chmod_mode("755").expect("mode"), 0o755);
+        assert_eq!(parse_chmod_mode("600").expect("mode"), 0o600);
+    }
+
+    #[test]
+    fn parses_four_digit_octal_mode() {
+        assert_eq!(parse_chmod_mode("0644").expect("mode"), 0o644);
+        assert_eq!(parse_chmod_mode("1755").expect("mode"), 0o1755);
+    }
+
+    #[test]
+    fn rejects_invalid_chmod_modes() {
+        assert!(parse_chmod_mode("").is_err());
+        assert!(parse_chmod_mode("88").is_err());
+        assert!(parse_chmod_mode("10000").is_err());
+        assert!(parse_chmod_mode("8888").is_err());
+        assert!(parse_chmod_mode("rwx").is_err());
+    }
 }

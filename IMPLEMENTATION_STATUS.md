@@ -37,6 +37,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
   - `rename_local_file`
   - `create_local_dir`
 - 远程命令覆盖列表、读取、写入、删除、重命名、建目录。
+- 远程文件/目录权限编辑已接入 `chmod`，支持 3/4 位八进制模式并记录到 SFTP 操作日志。
 
 ### 服务器监控
 
@@ -85,5 +86,5 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，流量统计和真实环境回归仍需补充。
 - Telnet 和 RDP launcher 未做真实环境矩阵验证。
 - AI 未接入真实模型提供方。
-- SFTP 批量操作、权限编辑、拖拽上传和远程在线编辑仍是增强项。
+- SFTP 批量操作、拖拽上传和远程在线编辑仍是增强项。
 - 未进行完整人工 UI 回归；已完成构建、Rust 检查、监控单测和远端 SSH 命令级验证。

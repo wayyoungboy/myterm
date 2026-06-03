@@ -58,6 +58,7 @@ pub fn run() {
             commands::sftp::sftp_remove_file,
             commands::sftp::sftp_rename,
             commands::sftp::sftp_mkdir,
+            commands::sftp::sftp_chmod,
             // Monitor
             commands::monitor::get_monitor_data,
             // Notes

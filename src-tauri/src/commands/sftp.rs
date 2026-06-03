@@ -126,3 +126,16 @@ pub fn sftp_mkdir(
         crate::ssh::sftp::mkdir(session, &path)
     })
 }
+
+#[tauri::command]
+pub fn sftp_chmod(
+    db: State<'_, DbConn>,
+    tm: State<'_, TerminalManager>,
+    session_id: String,
+    path: String,
+    mode: String,
+) -> Result<(), String> {
+    run_sftp_op(&db, &tm, &session_id, "chmod", &path, |session| {
+        crate::ssh::sftp::chmod(session, &path, &mode)
+    })
+}
