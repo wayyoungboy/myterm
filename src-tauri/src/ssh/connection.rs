@@ -15,6 +15,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+const DEFAULT_KEEPALIVE_MS: i32 = 5000;
+const MIN_KEEPALIVE_MS: i32 = 1000;
+const MAX_KEEPALIVE_MS: i32 = 600_000;
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct SshConnectParams {
@@ -506,9 +510,24 @@ fn configure_authenticated_session(
     session: &Session,
     params: &SshConnectParams,
 ) -> Result<(), String> {
-    let heartbeat_secs = params.heartbeat_ms.unwrap_or(5000) / 1000;
-    session.set_keepalive(true, heartbeat_secs as u32);
+    let heartbeat_secs = keepalive_interval_secs(params.heartbeat_ms);
+    session.set_keepalive(true, heartbeat_secs);
+    log::info!(
+        target: "myterm::ssh",
+        "ssh keepalive configured host={} port={} interval_secs={} configured_ms={:?}",
+        params.host,
+        params.port,
+        heartbeat_secs,
+        params.heartbeat_ms
+    );
     auth_session(session, params)
+}
+
+fn keepalive_interval_secs(heartbeat_ms: Option<i32>) -> u32 {
+    let clamped = heartbeat_ms
+        .unwrap_or(DEFAULT_KEEPALIVE_MS)
+        .clamp(MIN_KEEPALIVE_MS, MAX_KEEPALIVE_MS);
+    ((clamped + 999) / 1000) as u32
 }
 
 #[cfg(not(unix))]
@@ -714,5 +733,15 @@ mod tests {
             encode_socks5_address(IpAddr::V6(Ipv6Addr::LOCALHOST)),
             vec![0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
         );
+    }
+
+    #[test]
+    fn normalizes_keepalive_interval_seconds() {
+        assert_eq!(keepalive_interval_secs(None), 5);
+        assert_eq!(keepalive_interval_secs(Some(7000)), 7);
+        assert_eq!(keepalive_interval_secs(Some(1500)), 2);
+        assert_eq!(keepalive_interval_secs(Some(0)), 1);
+        assert_eq!(keepalive_interval_secs(Some(-5000)), 1);
+        assert_eq!(keepalive_interval_secs(Some(999_999)), 600);
     }
 }

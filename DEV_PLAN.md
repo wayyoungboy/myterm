@@ -41,7 +41,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | 1.6 | 多标签独立实例 | ✅ | 每个 tab 独立 session |
 | 1.7 | 连接状态显示 | ✅ | StatusBar 事件驱动 |
 | 1.8 | 终端窗口大小调整 | ✅ | ResizeObserver + PTY resize |
-| 1.9 | Keepalive 心跳 | ⚠️ | 字段存在，仍需长时间连接验证 |
+| 1.9 | Keepalive 心跳 | ✅ | libssh2 keepalive 已按连接心跳间隔配置，参数范围 1s-10min，仍建议做长时间 soak test |
 
 ---
 

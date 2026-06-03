@@ -212,7 +212,18 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
         <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
           心跳时间（毫秒）
         </label>
-        <input className="input" type="number" value={form.heartbeat_ms || 5000} onChange={(e) => handleChange('heartbeat_ms', parseInt(e.target.value) || 5000)} />
+        <input
+          className="input"
+          type="number"
+          min={1000}
+          max={600000}
+          step={1000}
+          value={form.heartbeat_ms || 5000}
+          onChange={(e) => {
+            const parsed = parseInt(e.target.value) || 5000;
+            handleChange('heartbeat_ms', Math.min(600000, Math.max(1000, parsed)));
+          }}
+        />
       </div>
       <div>
         <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
