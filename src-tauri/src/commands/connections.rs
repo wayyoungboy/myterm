@@ -480,7 +480,29 @@ pub fn delete_connection(db: State<'_, DbConn>, id: String) -> Result<(), String
 #[tauri::command]
 pub fn test_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Result<String, String> {
     let op_id = Uuid::new_v4().to_string();
-    let params = ssh_params_from_input(&db, input)?;
+    let input_id = input.id.clone();
+    let input_host = input.host.clone();
+    let input_port = input.port;
+    log::info!(
+        target: "myterm::connections",
+        "test connection request op_id={} connection_id={:?} host={} port={:?}",
+        op_id,
+        input_id,
+        input_host,
+        input_port
+    );
+    let params = ssh_params_from_input(&db, input).map_err(|err| {
+        log::error!(
+            target: "myterm::connections",
+            "test connection params failed op_id={} connection_id={:?} host={} port={:?} error={}",
+            op_id,
+            input_id,
+            input_host,
+            input_port,
+            err
+        );
+        err
+    })?;
     log::info!(
         target: "myterm::connections",
         "test connection start op_id={} host={} port={} username={} auth_type={}",
@@ -519,8 +541,22 @@ pub fn collect_server_info(
 ) -> Result<ServerInfo, String> {
     use std::io::Read;
     let op_id = Uuid::new_v4().to_string();
+    let input_id = input.id.clone();
+    let input_host = input.host.clone();
+    let input_port = input.port;
 
-    let params = ssh_params_from_input(&db, input)?;
+    let params = ssh_params_from_input(&db, input).map_err(|err| {
+        log::error!(
+            target: "myterm::connections",
+            "collect server info params failed op_id={} connection_id={:?} host={} port={:?} error={}",
+            op_id,
+            input_id,
+            input_host,
+            input_port,
+            err
+        );
+        err
+    })?;
 
     log::info!(
         target: "myterm::connections",
