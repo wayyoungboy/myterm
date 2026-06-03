@@ -191,6 +191,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [x] 统一终端写入/resize 的 Tauri 前端封装
 - [x] SFTP/Monitor 从共享 SSH session 改为独立 SSH session
 - [ ] CSS 变量和间距规范继续收敛
-- [ ] Tauri 权限配置最小化复核
+- [x] Tauri 权限配置最小化复核（capabilities 保持 core/opener；CSP 已启用并覆盖 IPC）
 - [x] 端口转发线程生命周期重构
 - [ ] 监控数据格式从 section 文本迁移到 JSON

@@ -115,3 +115,35 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    fn tauri_config() -> Value {
+        let config_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tauri.conf.json");
+        let raw = std::fs::read_to_string(&config_path)
+            .unwrap_or_else(|err| panic!("read {}: {}", config_path.display(), err));
+        serde_json::from_str(&raw)
+            .unwrap_or_else(|err| panic!("parse {}: {}", config_path.display(), err))
+    }
+
+    #[test]
+    fn tauri_csp_is_enabled_for_ipc() {
+        let config = tauri_config();
+        let csp = &config["app"]["security"]["csp"];
+
+        assert!(csp.is_object(), "Tauri CSP must be explicitly configured");
+        assert_eq!(
+            csp["connect-src"].as_str(),
+            Some("ipc: http://ipc.localhost"),
+            "connect-src must allow Tauri IPC and nothing broader"
+        );
+        assert!(
+            csp["default-src"]
+                .as_str()
+                .is_some_and(|value| value.contains("'self'")),
+            "default-src must be locked to self"
+        );
+    }
+}

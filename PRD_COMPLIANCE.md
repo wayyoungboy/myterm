@@ -100,6 +100,13 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 敏感信息保护 | ✅ | 不记录密码、私钥内容、终端输入字节 |
 | 可调日志等级 | ✅ | `MYTERM_LOG=debug/trace` |
 
+## 桌面安全配置
+
+| 需求项 | 状态 | 说明 |
+| --- | --- | --- |
+| Tauri capabilities | ✅ | 当前仅保留 `core:default` 和 `opener:default` |
+| Content Security Policy | ✅ | CSP 已启用，默认限制为 `self` / `asset`，IPC connect-src 仅开放 `ipc:` 和 `http://ipc.localhost` |
+
 ## 验证
 
 已执行或本轮应持续执行：
@@ -115,6 +122,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - TypeScript/Vite build 通过。
 - Rust check 通过且无 warning。
-- Rust 单元测试通过，当前覆盖 18 个测试。
+- Rust 单元测试通过，当前覆盖 19 个测试。
 - 真实 SSH 测试服务器连接通过。
 - macOS arm64 `.app` 和 DMG 产物已生成；Windows MSI / Linux DEB 尚未在对应平台验证。

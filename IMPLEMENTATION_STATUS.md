@@ -77,6 +77,12 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - 默认日志等级为 `info`，可通过 `MYTERM_LOG=debug` 或 `MYTERM_LOG=trace` 提升。
 - 不记录密码、私钥内容或终端输入字节。
 
+### 桌面安全配置
+
+- Tauri capabilities 当前保持 `core:default` 和 `opener:default`，未开放额外插件权限。
+- Tauri CSP 已显式启用，默认限制为 `self` / `asset`，`connect-src` 仅保留 Tauri IPC 所需的 `ipc:` 和 `http://ipc.localhost`。
+- Rust 单元测试覆盖 `tauri.conf.json` 中 CSP 必须启用并包含 IPC connect-src，防止后续回退到 `csp: null`。
+
 ### 打包发布
 
 - `npm run tauri -- build` 已验证 release binary 和 macOS `.app` 能成功生成。
@@ -90,7 +96,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - `npm run build`：通过。
 - `cd src-tauri && cargo check`：通过，当前无 Rust warning。
-- `cd src-tauri && cargo test`：通过，18 个测试。
+- `cd src-tauri && cargo test`：通过，19 个测试。
 - SSH smoke test：通过，测试服务器返回 `MYTERM_SSH_OK`。
 
 ## 已知遗留
