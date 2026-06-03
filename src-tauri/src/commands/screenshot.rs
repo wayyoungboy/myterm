@@ -77,7 +77,12 @@ pub fn take_screenshot(app_handle: AppHandle) -> Result<String, String> {
                     .args(["-u", filepath.to_str().ok_or("Invalid path")?])
                     .output()
             })
-            .map_err(|e| format!("Screenshot tool not found: {}. Install gnome-screenshot or scrot.", e))?;
+            .map_err(|e| {
+                format!(
+                    "Screenshot tool not found: {}. Install gnome-screenshot or scrot.",
+                    e
+                )
+            })?;
 
         if !result.status.success() {
             return Err("Screenshot capture failed".to_string());

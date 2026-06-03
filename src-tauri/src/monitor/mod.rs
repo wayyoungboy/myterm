@@ -1,6 +1,6 @@
+use crate::db::models::{DiskPartition, GpuData, MonitorData, ProcessInfo};
 use ssh2::Session;
 use std::io::Read;
-use crate::db::models::{MonitorData, DiskPartition, GpuData, ProcessInfo};
 
 const MONITOR_SCRIPT: &str = r#"#!/bin/sh
 # System monitor script - pure POSIX sh
@@ -164,13 +164,16 @@ echo "===END==="
 
 pub fn fetch_monitor_data(session: &Session) -> Result<MonitorData, String> {
     let script = MONITOR_SCRIPT.replace("\r\n", "\n");
-    let mut channel = session.channel_session()
+    let mut channel = session
+        .channel_session()
         .map_err(|e| format!("Channel open failed: {}", e))?;
-    channel.exec(&format!("sh -c '{}'", script.replace("'", "'\\''")))
+    channel
+        .exec(&format!("sh -c '{}'", script.replace("'", "'\\''")))
         .map_err(|e| format!("Exec failed: {}", e))?;
 
     let mut output = String::new();
-    channel.read_to_string(&mut output)
+    channel
+        .read_to_string(&mut output)
         .map_err(|e| format!("Read failed: {}", e))?;
     channel.wait_close().ok();
 
@@ -188,7 +191,8 @@ fn parse_monitor_output(output: &str) -> Result<MonitorData, String> {
         .unwrap_or(0);
 
     let load_str = extract_section(data, "LOAD").unwrap_or_default();
-    let load_parts: Vec<f64> = load_str.split_whitespace()
+    let load_parts: Vec<f64> = load_str
+        .split_whitespace()
         .take(3)
         .filter_map(|s| s.parse().ok())
         .collect();
@@ -244,7 +248,8 @@ fn parse_monitor_output(output: &str) -> Result<MonitorData, String> {
     let disk_write_rate = disk_rates.get(1).copied().unwrap_or(0);
 
     let disk_section = extract_section(data, "DISK").unwrap_or_default();
-    let disk_partitions: Vec<DiskPartition> = disk_section.lines()
+    let disk_partitions: Vec<DiskPartition> = disk_section
+        .lines()
         .enumerate()
         .filter(|(_, line)| !line.is_empty())
         .filter_map(|(idx, line)| {
@@ -320,13 +325,10 @@ fn extract_section(data: &str, section: &str) -> Option<String> {
 }
 
 fn extract_mem_value(mem_section: &str, key: &str) -> u64 {
-    mem_section.lines()
+    mem_section
+        .lines()
         .find(|line| line.starts_with(key))
-        .and_then(|line| {
-            line.split_whitespace()
-                .nth(1)
-                .and_then(|s| s.parse().ok())
-        })
+        .and_then(|line| line.split_whitespace().nth(1).and_then(|s| s.parse().ok()))
         .unwrap_or(0)
 }
 
@@ -385,9 +387,13 @@ mod tests {
 
     #[test]
     fn extracts_multiline_section_between_markers() {
-        let output = "===HOSTNAME===\nserver-1\n===MEMORY===\nMemTotal: 10 kB\nCached: 2 kB\n===END===";
+        let output =
+            "===HOSTNAME===\nserver-1\n===MEMORY===\nMemTotal: 10 kB\nCached: 2 kB\n===END===";
 
-        assert_eq!(extract_section(output, "HOSTNAME").as_deref(), Some("server-1"));
+        assert_eq!(
+            extract_section(output, "HOSTNAME").as_deref(),
+            Some("server-1")
+        );
         assert_eq!(
             extract_section(output, "MEMORY").as_deref(),
             Some("MemTotal: 10 kB\nCached: 2 kB")
@@ -453,7 +459,10 @@ none
         assert_eq!(data.mem_cached, 275 * 1024);
         assert_eq!(data.net_rx_rate, 300);
         assert_eq!(data.net_tx_rate, 400);
-        assert_eq!(data.net_interfaces, vec!["eth0".to_string(), "eth1".to_string()]);
+        assert_eq!(
+            data.net_interfaces,
+            vec!["eth0".to_string(), "eth1".to_string()]
+        );
         assert_eq!(data.disk_partitions[0].fs_type, "ext4");
         assert_eq!(data.disk_partitions[0].read_rate, 1024);
         assert_eq!(data.disk_partitions[0].write_rate, 2048);

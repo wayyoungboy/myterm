@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::process::{Command, Stdio, Child, ChildStdin};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Arc;
 use std::thread;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -91,10 +91,9 @@ pub fn open_local_terminal(
         }
     });
 
-    ltm.sessions.lock().insert(session_id.clone(), LocalTerminalSession {
-        child,
-        stdin,
-    });
+    ltm.sessions
+        .lock()
+        .insert(session_id.clone(), LocalTerminalSession { child, stdin });
 
     Ok(session_id)
 }
@@ -107,9 +106,13 @@ pub fn local_terminal_write(
 ) -> Result<(), String> {
     let mut sessions = ltm.sessions.lock();
     if let Some(session) = sessions.get_mut(&session_id) {
-        session.stdin.write_all(data.as_bytes())
+        session
+            .stdin
+            .write_all(data.as_bytes())
             .map_err(|e| format!("Write failed: {}", e))?;
-        session.stdin.flush()
+        session
+            .stdin
+            .flush()
             .map_err(|e| format!("Flush failed: {}", e))?;
         Ok(())
     } else {

@@ -62,7 +62,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 | SFTP/Monitor session 隔离 | ✅ | 文件和监控操作使用独立 SSH 连接，避免影响终端 reader |
 | 侧边栏工具入口 | ✅ | Notes/AI/Forward/Telnet/Commands/Settings |
 | 批量操作 | ⚠️ | 后续增强 |
-| ProxyJump / 出站代理链路 | ⚠️ | 字段和 UI 存在，后端链路未完成 |
+| HTTP/SOCKS5 出站代理 | ✅ | 连接测试、终端、SFTP/Monitor 辅助 SSH 会话共享同一代理链路 |
+| ProxyJump 多跳链路 | ⚠️ | 字段保留；若设置会明确报错，完整 SSH direct-tcpip 多跳待实现 |
 
 ---
 
@@ -170,6 +171,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 - [x] 关键操作追溯 ID（SSH/SFTP/Monitor 等）
 - [ ] 连接断线自动重连
 - [ ] 会话录制与回放
+- [x] HTTP CONNECT / SOCKS5 出站代理
 - [ ] 多跳代理连接（ProxyJump 链）
 - [ ] 凭证管理（统一存储、复用）
 - [ ] SFTP 大文件传输进度和取消

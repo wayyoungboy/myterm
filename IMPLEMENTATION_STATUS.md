@@ -16,6 +16,7 @@ MyTerm 当前按 SSH-first 桌面管理器推进，优先保证 SSH 连接、终
 - 终端 tab 切换不再触发 SSH 断开；关闭 tab 才释放 session。
 - 终端输入、resize、连接和断开通过统一 Tauri 封装调用。
 - SSH 认证支持密码、指定私钥路径、ssh-agent，以及默认私钥 `~/.ssh/id_ed25519` / `~/.ssh/id_rsa` 等。
+- HTTP CONNECT 和 SOCKS5 出站代理已接入共享 SSH 连接层，连接测试、终端、SFTP 和监控辅助 SSH 会话走同一传输逻辑。
 - SSH smoke test 已验证：
 
 ```bash
@@ -76,7 +77,8 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 ## 已知遗留
 
-- ProxyJump/HTTP/SOCKS 出站代理字段已有雏形，但完整链路尚未实现。
+- ProxyJump 字段已有雏形，完整 SSH direct-tcpip 多跳链路尚未实现；若配置了 `proxy_jump_id`，当前会返回明确错误而不是静默直连。
+- HTTP CONNECT / SOCKS5 出站代理已接入；代理认证尚未实现。
 - SFTP/Monitor 当前为每次操作建立独立 SSH 连接，稳定性优先；后续可做连接池优化以减少握手开销。
 - 端口转发当前支持 local 和 dynamic 的基础命令，remote forwarding 尚未支持，流量统计和真实环境回归仍需补充。
 - Telnet 和 RDP launcher 未做真实环境矩阵验证。

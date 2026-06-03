@@ -1,14 +1,14 @@
 use crate::commands::ssh_params::connect_for_terminal_session;
 use crate::db::DbConn;
 use crate::terminal::TerminalManager;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{TcpListener, TcpStream};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use parking_lot::Mutex;
+use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -86,7 +86,8 @@ pub fn create_port_forward(
                             let rh = rh.clone();
                             let rp = remote_port;
                             thread::spawn(move || {
-                                if let Ok(mut channel) = session.channel_direct_tcpip(&rh, rp, None) {
+                                if let Ok(mut channel) = session.channel_direct_tcpip(&rh, rp, None)
+                                {
                                     let mut client = client;
                                     let _ = std::io::copy(&mut client, &mut channel);
                                 }
@@ -182,10 +183,13 @@ pub fn create_port_forward(
         active: true,
     };
 
-    pfm.forwards.lock().insert(id.clone(), ManagedForward {
-        info: forward,
-        running,
-    });
+    pfm.forwards.lock().insert(
+        id.clone(),
+        ManagedForward {
+            info: forward,
+            running,
+        },
+    );
     log::info!(
         target: "myterm::port_forward",
         "create success op_id={} forward_id={}",
@@ -197,18 +201,16 @@ pub fn create_port_forward(
 }
 
 #[tauri::command]
-pub fn get_port_forwards(
-    pfm: State<'_, PortForwardManager>,
-) -> Result<Vec<PortForward>, String> {
+pub fn get_port_forwards(pfm: State<'_, PortForwardManager>) -> Result<Vec<PortForward>, String> {
     let forwards = pfm.forwards.lock();
-    Ok(forwards.values().map(|managed| managed.info.clone()).collect())
+    Ok(forwards
+        .values()
+        .map(|managed| managed.info.clone())
+        .collect())
 }
 
 #[tauri::command]
-pub fn close_port_forward(
-    pfm: State<'_, PortForwardManager>,
-    id: String,
-) -> Result<(), String> {
+pub fn close_port_forward(pfm: State<'_, PortForwardManager>, id: String) -> Result<(), String> {
     let mut forwards = pfm.forwards.lock();
     if let Some(forward) = forwards.get_mut(&id) {
         forward.info.active = false;
@@ -233,13 +235,19 @@ fn handle_socks5(mut client: TcpStream, session: &ssh2::Session) {
     use std::io::{Read, Write};
 
     let mut buf = [0u8; 256];
-    if client.read(&mut buf).is_err() { return; }
+    if client.read(&mut buf).is_err() {
+        return;
+    }
 
     let _ = client.write_all(&[0x05, 0x00]);
 
-    if client.read(&mut buf).is_err() { return; }
+    if client.read(&mut buf).is_err() {
+        return;
+    }
 
-    if buf[0] != 0x05 || buf[1] != 0x01 { return; }
+    if buf[0] != 0x05 || buf[1] != 0x01 {
+        return;
+    }
 
     let (host, port) = match buf[3] {
         0x01 => {

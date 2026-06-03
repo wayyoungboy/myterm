@@ -1,8 +1,8 @@
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
-use parking_lot::Mutex;
 use std::thread;
 use tauri::{AppHandle, Emitter, State};
 
@@ -42,12 +42,16 @@ pub fn connect_telnet(
     let stream = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(10))
         .map_err(|e| format!("Telnet connect failed: {}", e))?;
 
-    stream.set_read_timeout(Some(std::time::Duration::from_millis(100))).ok();
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_millis(100)))
+        .ok();
 
     let session_id = uuid::Uuid::new_v4().to_string();
 
     // Clone stream for reading
-    let read_stream = stream.try_clone().map_err(|e| format!("Clone failed: {}", e))?;
+    let read_stream = stream
+        .try_clone()
+        .map_err(|e| format!("Clone failed: {}", e))?;
     let write_stream = stream;
 
     // Start reader thread
@@ -69,7 +73,8 @@ pub fn connect_telnet(
                         if buf[i] == 0xFF && i + 1 < n {
                             // IAC command
                             match buf[i + 1] {
-                                0xFE => { // DONT
+                                0xFE => {
+                                    // DONT
                                     if i + 2 < n {
                                         // Respond with WONT
                                         data.extend_from_slice(&[0xFF, 0xFC, buf[i + 2]]);
@@ -77,7 +82,8 @@ pub fn connect_telnet(
                                         continue;
                                     }
                                 }
-                                0xFD => { // DO
+                                0xFD => {
+                                    // DO
                                     if i + 2 < n {
                                         // Respond with WONT
                                         data.extend_from_slice(&[0xFF, 0xFC, buf[i + 2]]);
@@ -85,7 +91,8 @@ pub fn connect_telnet(
                                         continue;
                                     }
                                 }
-                                0xFB => { // WILL
+                                0xFB => {
+                                    // WILL
                                     if i + 2 < n {
                                         // Respond with DONT
                                         data.extend_from_slice(&[0xFF, 0xFE, buf[i + 2]]);
@@ -93,7 +100,8 @@ pub fn connect_telnet(
                                         continue;
                                     }
                                 }
-                                0xFC => { // WONT
+                                0xFC => {
+                                    // WONT
                                     if i + 2 < n {
                                         // Respond with DONT
                                         data.extend_from_slice(&[0xFF, 0xFE, buf[i + 2]]);
@@ -127,9 +135,12 @@ pub fn connect_telnet(
         }
     });
 
-    tm.sessions.lock().insert(session_id.clone(), TelnetSession {
-        stream: write_stream,
-    });
+    tm.sessions.lock().insert(
+        session_id.clone(),
+        TelnetSession {
+            stream: write_stream,
+        },
+    );
 
     Ok(session_id)
 }
@@ -142,9 +153,13 @@ pub fn telnet_write(
 ) -> Result<(), String> {
     let mut sessions = tm.sessions.lock();
     if let Some(session) = sessions.get_mut(&session_id) {
-        session.stream.write_all(data.as_bytes())
+        session
+            .stream
+            .write_all(data.as_bytes())
             .map_err(|e| format!("Write failed: {}", e))?;
-        session.stream.flush()
+        session
+            .stream
+            .flush()
             .map_err(|e| format!("Flush failed: {}", e))?;
         Ok(())
     } else {
@@ -153,10 +168,7 @@ pub fn telnet_write(
 }
 
 #[tauri::command]
-pub fn disconnect_telnet(
-    tm: State<'_, TelnetManager>,
-    session_id: String,
-) -> Result<(), String> {
+pub fn disconnect_telnet(tm: State<'_, TelnetManager>, session_id: String) -> Result<(), String> {
     tm.sessions.lock().remove(&session_id);
     Ok(())
 }

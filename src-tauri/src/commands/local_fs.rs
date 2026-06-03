@@ -59,8 +59,8 @@ pub fn list_local_dir(path: String) -> Result<Vec<SftpEntry>, String> {
     let path = normalize_path(&path);
     let mut entries = Vec::new();
 
-    let read_dir = fs::read_dir(&path)
-        .map_err(|e| format!("Failed to list {}: {}", path.display(), e))?;
+    let read_dir =
+        fs::read_dir(&path).map_err(|e| format!("Failed to list {}: {}", path.display(), e))?;
 
     for entry in read_dir {
         let entry = entry.map_err(|e| format!("Failed to read directory entry: {}", e))?;
@@ -92,8 +92,8 @@ pub fn write_local_file(path: String, data: Vec<u8>) -> Result<(), String> {
 #[tauri::command]
 pub fn remove_local_file(path: String) -> Result<(), String> {
     let path = normalize_path(&path);
-    let metadata = fs::metadata(&path)
-        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    let metadata =
+        fs::metadata(&path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
 
     if metadata.is_dir() {
         fs::remove_dir_all(&path)
@@ -122,4 +122,3 @@ pub fn create_local_dir(path: String) -> Result<(), String> {
     let path = normalize_path(&path);
     fs::create_dir_all(&path).map_err(|e| format!("Failed to create {}: {}", path.display(), e))
 }
-

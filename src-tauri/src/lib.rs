@@ -1,17 +1,17 @@
-mod db;
-mod ssh;
-mod terminal;
-mod monitor;
 mod commands;
 mod crypto;
+mod db;
 mod logging;
+mod monitor;
+mod ssh;
+mod terminal;
 
-use db::DbConn;
-use terminal::TerminalManager;
+use commands::local_terminal::LocalTerminalManager;
 use commands::port_forward::PortForwardManager;
 use commands::telnet::TelnetManager;
-use commands::local_terminal::LocalTerminalManager;
+use db::DbConn;
 use tauri::Manager;
+use terminal::TerminalManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

@@ -1,14 +1,18 @@
 use crate::db::DbConn;
-use tauri::State;
 use std::collections::HashMap;
+use tauri::State;
 
 #[tauri::command]
 pub fn get_settings(db: State<'_, DbConn>) -> Result<HashMap<String, String>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT key, value FROM settings").map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    }).map_err(|e| e.to_string())?;
+    let mut stmt = conn
+        .prepare("SELECT key, value FROM settings")
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
 
     let mut map = HashMap::new();
     for row in rows {
@@ -24,7 +28,8 @@ pub fn set_setting(db: State<'_, DbConn>, key: String, value: String) -> Result<
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
         rusqlite::params![key, value],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

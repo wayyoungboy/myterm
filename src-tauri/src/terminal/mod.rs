@@ -1,19 +1,19 @@
 pub mod pty;
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::ssh::SshSession;
 use parking_lot::Mutex;
 use ssh2::Channel;
+use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use tauri::{AppHandle, Emitter};
-use crate::ssh::SshSession;
 
 pub struct TerminalSession {
     pub id: String,
     pub connection_id: String,
-    pub _ssh: SshSession,       // Keep the SSH session + TCP stream alive
+    pub _ssh: SshSession, // Keep the SSH session + TCP stream alive
     pub channel: Arc<Mutex<Channel>>,
     pub running: Arc<AtomicBool>,
 }
@@ -79,9 +79,11 @@ impl TerminalManager {
         let sessions = self.sessions.lock();
         if let Some(session) = sessions.get(id) {
             let mut channel = session.channel.lock();
-            channel.write_all(data)
+            channel
+                .write_all(data)
                 .map_err(|e| format!("Write failed: {}", e))?;
-            channel.flush()
+            channel
+                .flush()
                 .map_err(|e| format!("Flush failed: {}", e))?;
             Ok(())
         } else {
@@ -93,7 +95,8 @@ impl TerminalManager {
         let sessions = self.sessions.lock();
         if let Some(session) = sessions.get(id) {
             let mut channel = session.channel.lock();
-            channel.request_pty_size(cols, rows, None, None)
+            channel
+                .request_pty_size(cols, rows, None, None)
                 .map_err(|e| format!("Resize failed: {}", e))?;
             Ok(())
         } else {
@@ -122,7 +125,8 @@ impl TerminalManager {
                                     "reader eof session_id={}",
                                     session_id
                                 );
-                                let _ = app_handle.emit(&format!("terminal-exit-{}", session_id), ());
+                                let _ =
+                                    app_handle.emit(&format!("terminal-exit-{}", session_id), ());
                                 break;
                             }
                             drop(channel);
@@ -132,10 +136,8 @@ impl TerminalManager {
                         Ok(n) => {
                             let data = buf[..n].to_vec();
                             drop(channel);
-                            let _ = app_handle.emit(
-                                &format!("terminal-output-{}", session_id),
-                                data,
-                            );
+                            let _ =
+                                app_handle.emit(&format!("terminal-output-{}", session_id), data);
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                             drop(channel);

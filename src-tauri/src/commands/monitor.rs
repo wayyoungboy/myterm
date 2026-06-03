@@ -1,6 +1,6 @@
 use crate::commands::ssh_params::connect_for_terminal_session;
-use crate::db::DbConn;
 use crate::db::models::MonitorData;
+use crate::db::DbConn;
 use crate::terminal::TerminalManager;
 use tauri::State;
 

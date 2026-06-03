@@ -1,9 +1,9 @@
+use super::SshSession;
 use ssh2::Session;
-use std::net::TcpStream;
+use std::io::{Read, Write};
+use std::net::{IpAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::io::Read;
-use super::SshSession;
 
 #[allow(dead_code)]
 pub struct SshConnectParams {
@@ -14,6 +14,9 @@ pub struct SshConnectParams {
     pub password: Option<String>,
     pub key_path: Option<String>,
     pub timeout_ms: Option<u32>,
+    pub proxy_type: Option<String>,
+    pub proxy_host: Option<String>,
+    pub proxy_port: Option<u16>,
     pub proxy_jump_id: Option<String>,
     pub init_command: Option<String>,
     pub init_path: Option<String>,
@@ -39,6 +42,270 @@ fn connect_direct(host: &str, port: u16, timeout_ms: u32) -> Result<TcpStream, S
     tcp.set_write_timeout(Some(timeout)).ok();
 
     Ok(tcp)
+}
+
+fn connect_transport(params: &SshConnectParams, timeout_ms: u32) -> Result<TcpStream, String> {
+    let proxy_type = params
+        .proxy_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("none"));
+
+    if let Some(proxy_jump_id) = params
+        .proxy_jump_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        log::warn!(
+            target: "myterm::ssh",
+            "proxy jump requested but unsupported proxy_jump_id={} target={}:{}",
+            proxy_jump_id,
+            params.host,
+            params.port
+        );
+        return Err("ProxyJump SSH tunneling is not implemented yet".to_string());
+    }
+
+    match proxy_type.map(|value| value.to_ascii_lowercase()) {
+        None => connect_direct(&params.host, params.port, timeout_ms),
+        Some(kind) if kind == "http" || kind == "https" => connect_http_proxy(params, timeout_ms),
+        Some(kind) if kind == "socks5" || kind == "socks" => {
+            connect_socks5_proxy(params, timeout_ms)
+        }
+        Some(kind) => Err(format!("Unsupported SSH proxy type: {}", kind)),
+    }
+}
+
+fn proxy_endpoint(params: &SshConnectParams) -> Result<(&str, u16), String> {
+    let host = params
+        .proxy_host
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Proxy host is required".to_string())?;
+    let port = params
+        .proxy_port
+        .filter(|port| *port > 0)
+        .ok_or_else(|| "Proxy port is required".to_string())?;
+    Ok((host, port))
+}
+
+fn connect_http_proxy(params: &SshConnectParams, timeout_ms: u32) -> Result<TcpStream, String> {
+    let (proxy_host, proxy_port) = proxy_endpoint(params)?;
+    log::info!(
+        target: "myterm::ssh",
+        "ssh transport http proxy start proxy_host={} proxy_port={} target={}:{}",
+        proxy_host,
+        proxy_port,
+        params.host,
+        params.port
+    );
+
+    let mut tcp = connect_direct(proxy_host, proxy_port, timeout_ms)?;
+    let request = format!(
+        "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\nProxy-Connection: Keep-Alive\r\n\r\n",
+        params.host, params.port, params.host, params.port
+    );
+    tcp.write_all(request.as_bytes())
+        .map_err(|e| format!("HTTP proxy CONNECT write failed: {}", e))?;
+    tcp.flush()
+        .map_err(|e| format!("HTTP proxy CONNECT flush failed: {}", e))?;
+
+    let response = read_http_connect_response(&mut tcp)?;
+    validate_http_connect_response(&response)?;
+
+    log::info!(
+        target: "myterm::ssh",
+        "ssh transport http proxy connected proxy_host={} proxy_port={} target={}:{}",
+        proxy_host,
+        proxy_port,
+        params.host,
+        params.port
+    );
+    Ok(tcp)
+}
+
+fn read_http_connect_response(tcp: &mut TcpStream) -> Result<Vec<u8>, String> {
+    let mut response = Vec::new();
+    let mut byte = [0u8; 1];
+
+    while response.len() < 8192 {
+        let n = tcp
+            .read(&mut byte)
+            .map_err(|e| format!("HTTP proxy CONNECT read failed: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        response.push(byte[0]);
+        if response.windows(4).any(|window| window == b"\r\n\r\n") {
+            return Ok(response);
+        }
+    }
+
+    Err("HTTP proxy CONNECT response did not include a complete header".to_string())
+}
+
+fn parse_http_connect_status(response: &[u8]) -> Result<u16, String> {
+    let header_end = response
+        .windows(2)
+        .position(|window| window == b"\r\n")
+        .unwrap_or(response.len());
+    let status_line = std::str::from_utf8(&response[..header_end])
+        .map_err(|e| format!("HTTP proxy CONNECT response is not UTF-8: {}", e))?;
+    let mut parts = status_line.split_whitespace();
+    let version = parts
+        .next()
+        .ok_or_else(|| "HTTP proxy CONNECT response is empty".to_string())?;
+    if !version.starts_with("HTTP/") {
+        return Err(format!(
+            "HTTP proxy CONNECT response has invalid status line: {}",
+            status_line
+        ));
+    }
+    let status = parts
+        .next()
+        .ok_or_else(|| "HTTP proxy CONNECT response missing status code".to_string())?
+        .parse::<u16>()
+        .map_err(|e| format!("HTTP proxy CONNECT status parse failed: {}", e))?;
+    Ok(status)
+}
+
+fn validate_http_connect_response(response: &[u8]) -> Result<(), String> {
+    let status = parse_http_connect_status(response)?;
+    if (200..300).contains(&status) {
+        Ok(())
+    } else {
+        Err(format!("HTTP proxy CONNECT failed with status {}", status))
+    }
+}
+
+fn connect_socks5_proxy(params: &SshConnectParams, timeout_ms: u32) -> Result<TcpStream, String> {
+    let (proxy_host, proxy_port) = proxy_endpoint(params)?;
+    log::info!(
+        target: "myterm::ssh",
+        "ssh transport socks5 proxy start proxy_host={} proxy_port={} target={}:{}",
+        proxy_host,
+        proxy_port,
+        params.host,
+        params.port
+    );
+
+    let mut tcp = connect_direct(proxy_host, proxy_port, timeout_ms)?;
+    tcp.write_all(&[0x05, 0x01, 0x00])
+        .map_err(|e| format!("SOCKS5 greeting write failed: {}", e))?;
+    tcp.flush()
+        .map_err(|e| format!("SOCKS5 greeting flush failed: {}", e))?;
+
+    let mut method = [0u8; 2];
+    tcp.read_exact(&mut method)
+        .map_err(|e| format!("SOCKS5 greeting read failed: {}", e))?;
+    if method != [0x05, 0x00] {
+        return Err(format!(
+            "SOCKS5 proxy rejected no-auth method: version={} method={}",
+            method[0], method[1]
+        ));
+    }
+
+    let request = build_socks5_connect_request(&params.host, params.port)?;
+    tcp.write_all(&request)
+        .map_err(|e| format!("SOCKS5 connect write failed: {}", e))?;
+    tcp.flush()
+        .map_err(|e| format!("SOCKS5 connect flush failed: {}", e))?;
+
+    read_socks5_connect_response(&mut tcp)?;
+    log::info!(
+        target: "myterm::ssh",
+        "ssh transport socks5 proxy connected proxy_host={} proxy_port={} target={}:{}",
+        proxy_host,
+        proxy_port,
+        params.host,
+        params.port
+    );
+    Ok(tcp)
+}
+
+fn build_socks5_connect_request(host: &str, port: u16) -> Result<Vec<u8>, String> {
+    let mut request = vec![0x05, 0x01, 0x00];
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        request.extend(encode_socks5_address(ip));
+    } else {
+        let host_bytes = host.as_bytes();
+        if host_bytes.is_empty() || host_bytes.len() > u8::MAX as usize {
+            return Err("SOCKS5 target host must be 1-255 bytes".to_string());
+        }
+        request.push(0x03);
+        request.push(host_bytes.len() as u8);
+        request.extend_from_slice(host_bytes);
+    }
+    request.extend_from_slice(&port.to_be_bytes());
+    Ok(request)
+}
+
+fn encode_socks5_address(ip: IpAddr) -> Vec<u8> {
+    match ip {
+        IpAddr::V4(addr) => {
+            let mut encoded = vec![0x01];
+            encoded.extend_from_slice(&addr.octets());
+            encoded
+        }
+        IpAddr::V6(addr) => {
+            let mut encoded = vec![0x04];
+            encoded.extend_from_slice(&addr.octets());
+            encoded
+        }
+    }
+}
+
+fn read_socks5_connect_response(tcp: &mut TcpStream) -> Result<(), String> {
+    let mut header = [0u8; 4];
+    tcp.read_exact(&mut header)
+        .map_err(|e| format!("SOCKS5 connect response read failed: {}", e))?;
+    if header[0] != 0x05 {
+        return Err(format!("SOCKS5 response version mismatch: {}", header[0]));
+    }
+    if header[1] != 0x00 {
+        return Err(format!(
+            "SOCKS5 connect failed: {}",
+            socks5_reply_message(header[1])
+        ));
+    }
+
+    let address_len = match header[3] {
+        0x01 => 4,
+        0x03 => {
+            let mut len = [0u8; 1];
+            tcp.read_exact(&mut len)
+                .map_err(|e| format!("SOCKS5 domain length read failed: {}", e))?;
+            len[0] as usize
+        }
+        0x04 => 16,
+        other => {
+            return Err(format!(
+                "SOCKS5 response address type unsupported: {}",
+                other
+            ))
+        }
+    };
+
+    let mut discard = vec![0u8; address_len + 2];
+    tcp.read_exact(&mut discard)
+        .map_err(|e| format!("SOCKS5 bind address read failed: {}", e))?;
+    Ok(())
+}
+
+fn socks5_reply_message(code: u8) -> &'static str {
+    match code {
+        0x01 => "general SOCKS server failure",
+        0x02 => "connection not allowed by ruleset",
+        0x03 => "network unreachable",
+        0x04 => "host unreachable",
+        0x05 => "connection refused",
+        0x06 => "TTL expired",
+        0x07 => "command not supported",
+        0x08 => "address type not supported",
+        _ => "unknown SOCKS5 error",
+    }
 }
 
 fn auth_session(session: &Session, params: &SshConnectParams) -> Result<(), String> {
@@ -172,7 +439,10 @@ fn authenticate_with_default_keys(session: &Session, username: &str) -> Result<(
                 return Ok(());
             }
             Ok(()) => {
-                last_error = Some(format!("{} did not authenticate session", key_path.display()));
+                last_error = Some(format!(
+                    "{} did not authenticate session",
+                    key_path.display()
+                ));
             }
             Err(e) => {
                 last_error = Some(format!("{}: {}", key_path.display(), e));
@@ -209,16 +479,14 @@ fn expand_home(path: &str) -> PathBuf {
 pub fn connect(params: &SshConnectParams) -> Result<SshSession, String> {
     let timeout_ms = params.timeout_ms.unwrap_or(10000);
 
-    // If proxy_jump_id is set, we need to connect through a jump host
-    // For now, connect directly (proxy_jump_id lookup requires DB access)
-    // TODO: Implement ProxyJump by accepting a pre-connected session
+    let tcp = connect_transport(params, timeout_ms)?;
 
-    let tcp = connect_direct(&params.host, params.port, timeout_ms)?;
+    let mut session = Session::new().map_err(|e| format!("Session creation failed: {}", e))?;
 
-    let mut session = Session::new()
-        .map_err(|e| format!("Session creation failed: {}", e))?;
-
-    session.set_tcp_stream(tcp.try_clone().map_err(|e| format!("Clone failed: {}", e))?);
+    session.set_tcp_stream(
+        tcp.try_clone()
+            .map_err(|e| format!("Clone failed: {}", e))?,
+    );
     session
         .handshake()
         .map_err(|e| format!("SSH handshake failed: {}", e))?;
@@ -254,13 +522,16 @@ pub fn connect_through_jump(
 
 #[allow(dead_code)]
 pub fn exec_command(session: &Session, cmd: &str) -> Result<String, String> {
-    let mut channel = session.channel_session()
+    let mut channel = session
+        .channel_session()
         .map_err(|e| format!("Channel open failed: {}", e))?;
-    channel.exec(cmd)
+    channel
+        .exec(cmd)
         .map_err(|e| format!("Exec failed: {}", e))?;
 
     let mut output = String::new();
-    channel.read_to_string(&mut output)
+    channel
+        .read_to_string(&mut output)
         .map_err(|e| format!("Read failed: {}", e))?;
 
     // Also read stderr
@@ -274,4 +545,63 @@ pub fn exec_command(session: &Session, cmd: &str) -> Result<String, String> {
     }
 
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn parses_successful_http_connect_response() {
+        let response = b"HTTP/1.1 200 Connection established\r\nProxy-Agent: test\r\n\r\n";
+
+        let status = parse_http_connect_status(response).expect("status should parse");
+
+        assert_eq!(status, 200);
+    }
+
+    #[test]
+    fn rejects_unsuccessful_http_connect_response() {
+        let response = b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n";
+
+        let err = validate_http_connect_response(response).expect_err("407 must fail");
+
+        assert!(err.contains("407"));
+    }
+
+    #[test]
+    fn builds_socks5_domain_connect_request() {
+        let request = build_socks5_connect_request("example.com", 22).expect("request");
+
+        assert_eq!(
+            request,
+            vec![
+                0x05, 0x01, 0x00, 0x03, 11, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c',
+                b'o', b'm', 0x00, 0x16
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_socks5_ipv4_connect_request() {
+        let request = build_socks5_connect_request("127.0.0.1", 2222).expect("request");
+
+        assert_eq!(
+            request,
+            vec![0x05, 0x01, 0x00, 0x01, 127, 0, 0, 1, 0x08, 0xae]
+        );
+    }
+
+    #[test]
+    fn encodes_socks5_address_variants() {
+        assert_eq!(
+            encode_socks5_address(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
+            vec![0x01, 10, 0, 0, 1]
+        );
+        assert_eq!(
+            encode_socks5_address(IpAddr::V6(Ipv6Addr::LOCALHOST)),
+            vec![0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+        );
+    }
 }

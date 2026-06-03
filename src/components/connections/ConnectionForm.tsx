@@ -46,10 +46,36 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
     setTestResult(null);
   };
 
+  const handleProxyTypeChange = (value: string) => {
+    setForm((prev) => ({
+      ...prev,
+      proxy_type: value === 'none' ? undefined : value,
+      proxy_host: value === 'none' ? undefined : prev.proxy_host,
+      proxy_port: value === 'none' ? undefined : (prev.proxy_port || (value === 'http' ? 8080 : 1080)),
+      proxy_jump_id: undefined,
+    }));
+    setTestResult(null);
+  };
+
+  const validateProxy = () => {
+    if (!form.proxy_type || form.proxy_type === 'none') return true;
+    if (!form.proxy_host?.trim()) {
+      setError('代理主机不能为空');
+      return false;
+    }
+    if (!form.proxy_port || form.proxy_port <= 0) {
+      setError('代理端口无效');
+      return false;
+    }
+    return true;
+  };
+
   const handleTest = async () => {
-    setTesting(true);
     setError('');
     setTestResult(null);
+    if (!validateProxy()) return;
+
+    setTesting(true);
     try {
       await testConnection(form);
       setTestResult('success');
@@ -64,6 +90,7 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
   const handleSave = async () => {
     if (!form.name.trim()) { setError('名称不能为空'); return; }
     if (!form.host.trim()) { setError('主机地址不能为空'); return; }
+    if (!validateProxy()) return;
 
     setSaving(true);
     setError('');
@@ -189,23 +216,44 @@ export function ConnectionForm({ connectionId, initialData, onClose, onSaved }: 
     <div className="flex flex-col gap-4">
       <div>
         <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-          跳板机连接
+          代理类型
         </label>
-        <p className="text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>
-          按照跳板机顺序排列，第一台会最先连接。
-        </p>
-        <button className="btn btn-secondary text-xs">
-          + 添加跳板机
-        </button>
+        <select
+          className="select"
+          value={form.proxy_type || 'none'}
+          onChange={(e) => handleProxyTypeChange(e.target.value)}
+        >
+          <option value="none">不使用代理</option>
+          <option value="http">HTTP CONNECT</option>
+          <option value="socks5">SOCKS5</option>
+        </select>
       </div>
-      <div>
-        <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-          代理设置
-        </label>
-        <p className="text-[10px] mb-2" style={{ color: 'var(--text-muted)' }}>
-          仅在需要通过 HTTP 或 SOCKS 代理出站时填写，代理会优先于跳板机链路生效。
-        </p>
-        <input className="input" placeholder="例如 socks5://127.0.0.1:1080" disabled />
+      <div className="grid grid-cols-3 gap-2">
+        <div className="col-span-2">
+          <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+            代理主机
+          </label>
+          <input
+            className="input"
+            value={form.proxy_host || ''}
+            onChange={(e) => handleChange('proxy_host', e.target.value)}
+            placeholder="127.0.0.1"
+            disabled={!form.proxy_type || form.proxy_type === 'none'}
+          />
+        </div>
+        <div>
+          <label className="block text-xs mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+            端口
+          </label>
+          <input
+            className="input"
+            type="number"
+            value={form.proxy_port || ''}
+            onChange={(e) => handleChange('proxy_port', parseInt(e.target.value) || undefined)}
+            placeholder={form.proxy_type === 'http' ? '8080' : '1080'}
+            disabled={!form.proxy_type || form.proxy_type === 'none'}
+          />
+        </div>
       </div>
     </div>
   );

@@ -4,7 +4,10 @@ use tauri::State;
 use uuid::Uuid;
 
 #[tauri::command]
-pub fn get_quick_commands(db: State<'_, DbConn>, group_id: Option<String>) -> Result<Vec<QuickCommand>, String> {
+pub fn get_quick_commands(
+    db: State<'_, DbConn>,
+    group_id: Option<String>,
+) -> Result<Vec<QuickCommand>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(gid) = group_id {
         ("SELECT id, group_id, name, command, shortcut, sort_order FROM quick_commands WHERE group_id = ?1 ORDER BY sort_order",
@@ -15,18 +18,21 @@ pub fn get_quick_commands(db: State<'_, DbConn>, group_id: Option<String>) -> Re
     };
 
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
-        Ok(QuickCommand {
-            id: row.get(0)?,
-            group_id: row.get(1)?,
-            name: row.get(2)?,
-            command: row.get(3)?,
-            shortcut: row.get(4)?,
-            sort_order: row.get(5)?,
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok(QuickCommand {
+                id: row.get(0)?,
+                group_id: row.get(1)?,
+                name: row.get(2)?,
+                command: row.get(3)?,
+                shortcut: row.get(4)?,
+                sort_order: row.get(5)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -40,7 +46,11 @@ pub fn create_quick_command(
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     let max_order: i32 = conn
-        .query_row("SELECT COALESCE(MAX(sort_order), 0) FROM quick_commands", [], |r| r.get(0))
+        .query_row(
+            "SELECT COALESCE(MAX(sort_order), 0) FROM quick_commands",
+            [],
+            |r| r.get(0),
+        )
         .unwrap_or(0);
 
     conn.execute(
@@ -70,15 +80,19 @@ pub fn update_quick_command(
     conn.execute(
         "UPDATE quick_commands SET name = ?1, command = ?2, shortcut = ?3 WHERE id = ?4",
         rusqlite::params![name, command, shortcut, id],
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn delete_quick_command(db: State<'_, DbConn>, id: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM quick_commands WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM quick_commands WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

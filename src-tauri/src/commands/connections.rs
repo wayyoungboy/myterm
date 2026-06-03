@@ -1,6 +1,6 @@
+use crate::crypto::{encrypt_password, get_master_password};
 use crate::db::models::{Connection, ConnectionInput, Group};
 use crate::db::DbConn;
-use crate::crypto::{encrypt_password, get_master_password};
 use tauri::State;
 use uuid::Uuid;
 
@@ -38,7 +38,8 @@ fn to_response(conn: &Connection) -> ConnectionResponse {
         port: conn.port,
         auth_type: conn.auth_type.clone(),
         username: conn.username.clone(),
-        has_password: conn.password_enc.is_some() && !conn.password_enc.as_deref().unwrap_or("").is_empty(),
+        has_password: conn.password_enc.is_some()
+            && !conn.password_enc.as_deref().unwrap_or("").is_empty(),
         key_path: conn.key_path.clone(),
         proxy_type: conn.proxy_type.clone(),
         proxy_host: conn.proxy_host.clone(),
@@ -82,36 +83,43 @@ fn query_connection(conn_guard: &rusqlite::Connection, id: &str) -> Result<Conne
             created_at: row.get(19)?,
             updated_at: row.get(20)?,
         })
-    }).map_err(|e| format!("Connection not found: {}", e))
+    })
+    .map_err(|e| format!("Connection not found: {}", e))
 }
 
-fn query_connections(conn_guard: &rusqlite::Connection, sql: &str, params: &[&dyn rusqlite::types::ToSql]) -> Result<Vec<ConnectionResponse>, String> {
+fn query_connections(
+    conn_guard: &rusqlite::Connection,
+    sql: &str,
+    params: &[&dyn rusqlite::types::ToSql],
+) -> Result<Vec<ConnectionResponse>, String> {
     let mut stmt = conn_guard.prepare(sql).map_err(|e| e.to_string())?;
-    let rows = stmt.query_map(params, |row| {
-        Ok(Connection {
-            id: row.get(0)?,
-            group_id: row.get(1)?,
-            name: row.get(2)?,
-            host: row.get(3)?,
-            port: row.get(4)?,
-            auth_type: row.get(5)?,
-            username: row.get(6)?,
-            password_enc: row.get(7)?,
-            key_path: row.get(8)?,
-            credential_id: row.get(9)?,
-            proxy_type: row.get(10)?,
-            proxy_host: row.get(11)?,
-            proxy_port: row.get(12)?,
-            proxy_jump_id: row.get(13)?,
-            init_command: row.get(14)?,
-            init_path: row.get(15)?,
-            timeout_ms: row.get(16)?,
-            heartbeat_ms: row.get(17)?,
-            remark: row.get(18)?,
-            created_at: row.get(19)?,
-            updated_at: row.get(20)?,
+    let rows = stmt
+        .query_map(params, |row| {
+            Ok(Connection {
+                id: row.get(0)?,
+                group_id: row.get(1)?,
+                name: row.get(2)?,
+                host: row.get(3)?,
+                port: row.get(4)?,
+                auth_type: row.get(5)?,
+                username: row.get(6)?,
+                password_enc: row.get(7)?,
+                key_path: row.get(8)?,
+                credential_id: row.get(9)?,
+                proxy_type: row.get(10)?,
+                proxy_host: row.get(11)?,
+                proxy_port: row.get(12)?,
+                proxy_jump_id: row.get(13)?,
+                init_command: row.get(14)?,
+                init_path: row.get(15)?,
+                timeout_ms: row.get(16)?,
+                heartbeat_ms: row.get(17)?,
+                remark: row.get(18)?,
+                created_at: row.get(19)?,
+                updated_at: row.get(20)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let mut result = Vec::new();
     for row in rows {
@@ -141,15 +149,23 @@ pub fn get_groups(db: State<'_, DbConn>) -> Result<Vec<Group>, String> {
         })
         .map_err(|e| e.to_string())?;
 
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn create_group(db: State<'_, DbConn>, name: String, parent_id: Option<String>, icon: Option<String>) -> Result<Group, String> {
+pub fn create_group(
+    db: State<'_, DbConn>,
+    name: String,
+    parent_id: Option<String>,
+    icon: Option<String>,
+) -> Result<Group, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let id = Uuid::new_v4().to_string();
     let max_order: i32 = conn
-        .query_row("SELECT COALESCE(MAX(sort_order), 0) FROM groups", [], |r| r.get(0))
+        .query_row("SELECT COALESCE(MAX(sort_order), 0) FROM groups", [], |r| {
+            r.get(0)
+        })
         .unwrap_or(0);
 
     conn.execute(
@@ -169,7 +185,12 @@ pub fn create_group(db: State<'_, DbConn>, name: String, parent_id: Option<Strin
 }
 
 #[tauri::command]
-pub fn update_group(db: State<'_, DbConn>, id: String, name: String, icon: Option<String>) -> Result<(), String> {
+pub fn update_group(
+    db: State<'_, DbConn>,
+    id: String,
+    name: String,
+    icon: Option<String>,
+) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "UPDATE groups SET name = ?1, icon = ?2 WHERE id = ?3",
@@ -194,7 +215,10 @@ pub fn get_connections(db: State<'_, DbConn>) -> Result<Vec<ConnectionResponse>,
 }
 
 #[tauri::command]
-pub fn create_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Result<ConnectionResponse, String> {
+pub fn create_connection(
+    db: State<'_, DbConn>,
+    input: ConnectionInput,
+) -> Result<ConnectionResponse, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let id = input.id.unwrap_or_else(|| Uuid::new_v4().to_string());
     let port = input.port.unwrap_or(22);
@@ -251,7 +275,11 @@ pub fn create_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Resul
 }
 
 #[tauri::command]
-pub fn update_connection(db: State<'_, DbConn>, id: String, input: ConnectionInput) -> Result<(), String> {
+pub fn update_connection(
+    db: State<'_, DbConn>,
+    id: String,
+    input: ConnectionInput,
+) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     log::info!(
         target: "myterm::connections",
@@ -307,16 +335,19 @@ pub fn update_connection(db: State<'_, DbConn>, id: String, input: ConnectionInp
 pub fn delete_connection(db: State<'_, DbConn>, id: String) -> Result<(), String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     log::info!(target: "myterm::connections", "delete connection start id={}", id);
-    conn.execute("DELETE FROM connections WHERE id = ?1", rusqlite::params![id])
-        .map_err(|e| {
-            log::error!(
-                target: "myterm::connections",
-                "delete connection failed id={} error={}",
-                id,
-                e
-            );
-            e.to_string()
-        })?;
+    conn.execute(
+        "DELETE FROM connections WHERE id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| {
+        log::error!(
+            target: "myterm::connections",
+            "delete connection failed id={} error={}",
+            id,
+            e
+        );
+        e.to_string()
+    })?;
     log::info!(target: "myterm::connections", "delete connection success id={}", id);
     Ok(())
 }
@@ -333,7 +364,10 @@ pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
         password: input.password,
         key_path: input.key_path,
         timeout_ms: input.timeout_ms.map(|t| t as u32),
-        proxy_jump_id: None,
+        proxy_type: input.proxy_type,
+        proxy_host: input.proxy_host,
+        proxy_port: input.proxy_port.and_then(|port| u16::try_from(port).ok()),
+        proxy_jump_id: input.proxy_jump_id,
         init_command: None,
         init_path: None,
         heartbeat_ms: None,
@@ -379,11 +413,17 @@ pub fn collect_server_info(input: ConnectionInput) -> Result<ServerInfo, String>
         host: input.host.clone(),
         port: input.port.unwrap_or(22) as u16,
         username: input.username.clone().unwrap_or_else(|| "root".to_string()),
-        auth_type: input.auth_type.clone().unwrap_or_else(|| "password".to_string()),
+        auth_type: input
+            .auth_type
+            .clone()
+            .unwrap_or_else(|| "password".to_string()),
         password: input.password.clone(),
         key_path: input.key_path.clone(),
         timeout_ms: input.timeout_ms.map(|t| t as u32),
-        proxy_jump_id: None,
+        proxy_type: input.proxy_type.clone(),
+        proxy_host: input.proxy_host.clone(),
+        proxy_port: input.proxy_port.and_then(|port| u16::try_from(port).ok()),
+        proxy_jump_id: input.proxy_jump_id.clone(),
         init_command: None,
         init_path: None,
         heartbeat_ms: None,
@@ -421,17 +461,17 @@ df -B1 / 2>/dev/null | tail -1 | awk '{print $2}' || echo "0"
 echo "===END==="
 "#;
 
-    let mut channel = session.session.channel_session()
-        .map_err(|e| {
-            log::error!(
-                target: "myterm::connections",
-                "collect server info channel failed op_id={} error={}",
-                op_id,
-                e
-            );
-            format!("Channel failed: {}", e)
-        })?;
-    channel.exec(&format!("sh -c '{}'", script.replace("'", "'\\''")))
+    let mut channel = session.session.channel_session().map_err(|e| {
+        log::error!(
+            target: "myterm::connections",
+            "collect server info channel failed op_id={} error={}",
+            op_id,
+            e
+        );
+        format!("Channel failed: {}", e)
+    })?;
+    channel
+        .exec(&format!("sh -c '{}'", script.replace("'", "'\\''")))
         .map_err(|e| {
             log::error!(
                 target: "myterm::connections",
@@ -483,7 +523,11 @@ fn extract_info(output: &str, section: &str) -> Option<String> {
     let rest = output[start..].trim_start_matches('\n');
     let end = rest.find("\n===").unwrap_or(rest.len());
     let val = rest[..end].trim().to_string();
-    if val.is_empty() { None } else { Some(val) }
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -495,7 +539,10 @@ pub struct ServerInfo {
 }
 
 #[tauri::command]
-pub fn search_connections(db: State<'_, DbConn>, query: String) -> Result<Vec<ConnectionResponse>, String> {
+pub fn search_connections(
+    db: State<'_, DbConn>,
+    query: String,
+) -> Result<Vec<ConnectionResponse>, String> {
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let pattern = format!("%{}%", query);
     query_connections(&conn, "SELECT id, group_id, name, host, port, auth_type, username, password_enc, key_path, credential_id, proxy_type, proxy_host, proxy_port, proxy_jump_id, init_command, init_path, timeout_ms, heartbeat_ms, remark, created_at, updated_at FROM connections WHERE name LIKE ?1 OR host LIKE ?1 OR remark LIKE ?1 ORDER BY name", &[&pattern])

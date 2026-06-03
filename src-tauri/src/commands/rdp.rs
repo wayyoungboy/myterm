@@ -31,9 +31,7 @@ pub fn connect_rdp(
         }
 
         // Try xfreerdp first, then rdesktop
-        let result = std::process::Command::new("xfreerdp")
-            .args(&args)
-            .spawn();
+        let result = std::process::Command::new("xfreerdp").args(&args).spawn();
 
         match result {
             Ok(_) => return Ok("RDP session launched with xfreerdp".to_string()),
@@ -43,7 +41,12 @@ pub fn connect_rdp(
                     .spawn();
                 match result {
                     Ok(_) => return Ok("RDP session launched with rdesktop".to_string()),
-                    Err(e) => return Err(format!("No RDP client found. Install xfreerdp or rdesktop: {}", e)),
+                    Err(e) => {
+                        return Err(format!(
+                            "No RDP client found. Install xfreerdp or rdesktop: {}",
+                            e
+                        ))
+                    }
                 }
             }
         }

@@ -17,29 +17,31 @@ pub fn export_connections(db: State<'_, DbConn>) -> Result<String, String> {
         .prepare("SELECT id, group_id, name, host, port, auth_type, username, key_path, proxy_type, proxy_host, proxy_port, init_command, init_path, timeout_ms, heartbeat_ms, remark FROM connections ORDER BY name")
         .map_err(|e| e.to_string())?;
 
-    let rows = stmt.query_map([], |row| {
-        Ok(ConnectionInput {
-            id: row.get(0)?,
-            group_id: row.get(1)?,
-            name: row.get(2)?,
-            host: row.get(3)?,
-            port: row.get(4)?,
-            auth_type: row.get(5)?,
-            username: row.get(6)?,
-            password: None, // Don't export passwords
-            key_path: row.get(7)?,
-            credential_id: None,
-            proxy_type: row.get(8)?,
-            proxy_host: row.get(9)?,
-            proxy_port: row.get(10)?,
-            proxy_jump_id: None,
-            init_command: row.get(11)?,
-            init_path: row.get(12)?,
-            timeout_ms: row.get(13)?,
-            heartbeat_ms: row.get(14)?,
-            remark: row.get(15)?,
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(ConnectionInput {
+                id: row.get(0)?,
+                group_id: row.get(1)?,
+                name: row.get(2)?,
+                host: row.get(3)?,
+                port: row.get(4)?,
+                auth_type: row.get(5)?,
+                username: row.get(6)?,
+                password: None, // Don't export passwords
+                key_path: row.get(7)?,
+                credential_id: None,
+                proxy_type: row.get(8)?,
+                proxy_host: row.get(9)?,
+                proxy_port: row.get(10)?,
+                proxy_jump_id: None,
+                init_command: row.get(11)?,
+                init_path: row.get(12)?,
+                timeout_ms: row.get(13)?,
+                heartbeat_ms: row.get(14)?,
+                remark: row.get(15)?,
+            })
         })
-    }).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
 
     let connections: Vec<ConnectionInput> = rows.filter_map(|r| r.ok()).collect();
 
@@ -53,8 +55,8 @@ pub fn export_connections(db: State<'_, DbConn>) -> Result<String, String> {
 
 #[tauri::command]
 pub fn import_connections(db: State<'_, DbConn>, json: String) -> Result<usize, String> {
-    let import: ExportData = serde_json::from_str(&json)
-        .map_err(|e| format!("Invalid JSON format: {}", e))?;
+    let import: ExportData =
+        serde_json::from_str(&json).map_err(|e| format!("Invalid JSON format: {}", e))?;
 
     let conn = db.0.lock().map_err(|e| e.to_string())?;
     let mut count = 0;

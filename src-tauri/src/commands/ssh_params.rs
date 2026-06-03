@@ -12,6 +12,10 @@ pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectPar
         username,
         password_enc,
         key_path,
+        proxy_type,
+        proxy_host,
+        proxy_port,
+        proxy_jump_id,
         timeout_ms,
         init_command,
         init_path,
@@ -20,7 +24,7 @@ pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectPar
         let conn_guard = db.0.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn_guard
             .prepare(
-                "SELECT host, port, auth_type, username, password_enc, key_path, timeout_ms, init_command, init_path, heartbeat_ms FROM connections WHERE id = ?1",
+                "SELECT host, port, auth_type, username, password_enc, key_path, proxy_type, proxy_host, proxy_port, proxy_jump_id, timeout_ms, init_command, init_path, heartbeat_ms FROM connections WHERE id = ?1",
             )
             .map_err(|e| e.to_string())?;
 
@@ -32,10 +36,14 @@ pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectPar
                 row.get::<_, String>(3)?,
                 row.get::<_, Option<String>>(4)?,
                 row.get::<_, Option<String>>(5)?,
-                row.get::<_, Option<i32>>(6)?,
+                row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<String>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<i32>>(9)?,
+                row.get::<_, Option<i32>>(8)?,
+                row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<i32>>(10)?,
+                row.get::<_, Option<String>>(11)?,
+                row.get::<_, Option<String>>(12)?,
+                row.get::<_, Option<i32>>(13)?,
             ))
         })
         .map_err(|e| format!("Connection not found: {}", e))?
@@ -54,7 +62,10 @@ pub fn load_ssh_params(db: &DbConn, connection_id: &str) -> Result<SshConnectPar
         password,
         key_path,
         timeout_ms: timeout_ms.map(|t| t as u32),
-        proxy_jump_id: None,
+        proxy_type,
+        proxy_host,
+        proxy_port: proxy_port.and_then(|port| u16::try_from(port).ok()),
+        proxy_jump_id,
         init_command,
         init_path,
         heartbeat_ms,
@@ -108,4 +119,51 @@ pub fn connect_for_terminal_session(
         connection_id
     );
     Ok(ssh)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema::init_db;
+    use rusqlite::Connection;
+    use std::sync::Mutex;
+
+    #[test]
+    fn loads_proxy_fields_for_stored_connection() {
+        let conn = Connection::open_in_memory().expect("db");
+        init_db(&conn).expect("schema");
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params!["jump-1", "Jump", "jump.example", 22, "key", "jumper"],
+        )
+        .expect("insert jump");
+        conn.execute(
+            "INSERT INTO connections (id, name, host, port, auth_type, username, proxy_type, proxy_host, proxy_port, proxy_jump_id, heartbeat_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                "conn-1",
+                "Proxy Test",
+                "target.example",
+                22,
+                "key",
+                "tester",
+                "socks5",
+                "127.0.0.1",
+                1080,
+                "jump-1",
+                7000
+            ],
+        )
+        .expect("insert");
+        let db = DbConn(Mutex::new(conn));
+
+        let params = load_ssh_params(&db, "conn-1").expect("params");
+
+        assert_eq!(params.proxy_type.as_deref(), Some("socks5"));
+        assert_eq!(params.proxy_host.as_deref(), Some("127.0.0.1"));
+        assert_eq!(params.proxy_port, Some(1080));
+        assert_eq!(params.proxy_jump_id.as_deref(), Some("jump-1"));
+        assert_eq!(params.heartbeat_ms, Some(7000));
+    }
 }

@@ -1,12 +1,12 @@
-use crate::terminal::{TerminalManager, TerminalSession};
-use crate::terminal::pty::open_shell;
-use crate::ssh::connection::connect;
-use crate::db::DbConn;
 use crate::commands::ssh_params::load_ssh_params;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use crate::db::DbConn;
+use crate::ssh::connection::connect;
+use crate::terminal::pty::open_shell;
+use crate::terminal::{TerminalManager, TerminalSession};
 use parking_lot::Mutex;
-use tauri::{State, AppHandle};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub fn connect_terminal(
@@ -76,7 +76,7 @@ pub fn connect_terminal(
         tm.insert(TerminalSession {
             id: session_id.clone(),
             connection_id: connection_id.clone(),
-            _ssh: ssh_session,       // Keep TCP stream alive
+            _ssh: ssh_session, // Keep TCP stream alive
             channel: Arc::new(Mutex::new(channel)),
             running: Arc::new(AtomicBool::new(true)),
         });
