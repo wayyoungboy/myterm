@@ -1,9 +1,12 @@
 use crate::crypto::{encrypt_password, get_master_password};
 use crate::db::models::{Connection, ConnectionInput, Group};
 use crate::db::DbConn;
+use crate::ssh::connection::{connect, SshConnectParams};
 use rusqlite::OptionalExtension;
 use tauri::State;
 use uuid::Uuid;
+
+use super::ssh_params::load_ssh_params;
 
 // Response type that excludes sensitive fields
 #[derive(Debug, serde::Serialize, Clone)]
@@ -91,6 +94,98 @@ fn encrypted_password_for_update(
     } else {
         Ok(None)
     }
+}
+
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        if value.trim().is_empty() {
+            None
+        } else {
+            Some(value)
+        }
+    })
+}
+
+fn port_i32_to_u16(port: i32, field: &str) -> Result<u16, String> {
+    u16::try_from(port)
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| format!("{} must be between 1 and 65535", field))
+}
+
+fn ssh_params_from_input(db: &DbConn, input: ConnectionInput) -> Result<SshConnectParams, String> {
+    let saved = input
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(|id| load_ssh_params(db, id))
+        .transpose()?;
+
+    let host = if input.host.trim().is_empty() {
+        saved
+            .as_ref()
+            .map(|params| params.host.clone())
+            .ok_or_else(|| "Host is required".to_string())?
+    } else {
+        input.host
+    };
+    let port = match input.port {
+        Some(port) => port_i32_to_u16(port, "Port")?,
+        None => saved.as_ref().map(|params| params.port).unwrap_or(22),
+    };
+    let auth_type = non_empty(input.auth_type)
+        .or_else(|| saved.as_ref().map(|params| params.auth_type.clone()))
+        .unwrap_or_else(|| "password".to_string());
+    let username = non_empty(input.username)
+        .or_else(|| saved.as_ref().map(|params| params.username.clone()))
+        .unwrap_or_else(|| "root".to_string());
+    let password = non_empty(input.password).or_else(|| {
+        if auth_type_keeps_password(&auth_type) {
+            saved.as_ref().and_then(|params| params.password.clone())
+        } else {
+            None
+        }
+    });
+    let proxy_jump_id = non_empty(input.proxy_jump_id);
+    let proxy_jump = proxy_jump_id
+        .as_deref()
+        .map(|jump_id| load_ssh_params(db, jump_id).map(Box::new))
+        .transpose()?;
+    let use_proxy_jump = proxy_jump.is_some();
+
+    Ok(SshConnectParams {
+        host,
+        port,
+        username,
+        auth_type,
+        password,
+        key_path: non_empty(input.key_path),
+        timeout_ms: input.timeout_ms.map(|timeout| timeout.max(1) as u32),
+        proxy_type: if use_proxy_jump {
+            None
+        } else {
+            non_empty(input.proxy_type)
+        },
+        proxy_host: if use_proxy_jump {
+            None
+        } else {
+            non_empty(input.proxy_host)
+        },
+        proxy_port: if use_proxy_jump {
+            None
+        } else {
+            input
+                .proxy_port
+                .map(|port| port_i32_to_u16(port, "Proxy port"))
+                .transpose()?
+        },
+        proxy_jump_id,
+        proxy_jump,
+        init_command: non_empty(input.init_command),
+        init_path: non_empty(input.init_path),
+        heartbeat_ms: input.heartbeat_ms,
+    })
 }
 
 fn query_connection(conn_guard: &rusqlite::Connection, id: &str) -> Result<Connection, String> {
@@ -383,26 +478,9 @@ pub fn delete_connection(db: State<'_, DbConn>, id: String) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
-    use crate::ssh::connection::{connect, SshConnectParams};
+pub fn test_connection(db: State<'_, DbConn>, input: ConnectionInput) -> Result<String, String> {
     let op_id = Uuid::new_v4().to_string();
-    let params = SshConnectParams {
-        host: input.host,
-        port: input.port.unwrap_or(22) as u16,
-        username: input.username.unwrap_or_else(|| "root".to_string()),
-        auth_type: input.auth_type.unwrap_or_else(|| "password".to_string()),
-        password: input.password,
-        key_path: input.key_path,
-        timeout_ms: input.timeout_ms.map(|t| t as u32),
-        proxy_type: input.proxy_type,
-        proxy_host: input.proxy_host,
-        proxy_port: input.proxy_port.and_then(|port| u16::try_from(port).ok()),
-        proxy_jump_id: input.proxy_jump_id,
-        proxy_jump: None,
-        init_command: None,
-        init_path: None,
-        heartbeat_ms: None,
-    };
+    let params = ssh_params_from_input(&db, input)?;
     log::info!(
         target: "myterm::connections",
         "test connection start op_id={} host={} port={} username={} auth_type={}",
@@ -435,31 +513,14 @@ pub fn test_connection(input: ConnectionInput) -> Result<String, String> {
 
 /// Collect server hardware info (OS, CPU cores, memory, disk) via SSH
 #[tauri::command]
-pub fn collect_server_info(input: ConnectionInput) -> Result<ServerInfo, String> {
-    use crate::ssh::connection::{connect, SshConnectParams};
+pub fn collect_server_info(
+    db: State<'_, DbConn>,
+    input: ConnectionInput,
+) -> Result<ServerInfo, String> {
     use std::io::Read;
     let op_id = Uuid::new_v4().to_string();
 
-    let params = SshConnectParams {
-        host: input.host.clone(),
-        port: input.port.unwrap_or(22) as u16,
-        username: input.username.clone().unwrap_or_else(|| "root".to_string()),
-        auth_type: input
-            .auth_type
-            .clone()
-            .unwrap_or_else(|| "password".to_string()),
-        password: input.password.clone(),
-        key_path: input.key_path.clone(),
-        timeout_ms: input.timeout_ms.map(|t| t as u32),
-        proxy_type: input.proxy_type.clone(),
-        proxy_host: input.proxy_host.clone(),
-        proxy_port: input.proxy_port.and_then(|port| u16::try_from(port).ok()),
-        proxy_jump_id: input.proxy_jump_id.clone(),
-        proxy_jump: None,
-        init_command: None,
-        init_path: None,
-        heartbeat_ms: None,
-    };
+    let params = ssh_params_from_input(&db, input)?;
 
     log::info!(
         target: "myterm::connections",
@@ -621,5 +682,39 @@ mod tests {
             encrypted_password_for_update(&conn, "conn-1", "key", None).expect("password");
 
         assert!(encrypted.is_none());
+    }
+
+    #[test]
+    fn ssh_params_from_input_reuses_saved_password_for_existing_connection_test() {
+        let conn = test_connection_db(Some("old-secret"));
+        let db = DbConn(std::sync::Mutex::new(conn));
+
+        let params = ssh_params_from_input(
+            &db,
+            ConnectionInput {
+                id: Some("conn-1".to_string()),
+                name: "Server".to_string(),
+                host: "127.0.0.1".to_string(),
+                port: Some(22),
+                auth_type: Some("password".to_string()),
+                username: Some("root".to_string()),
+                password: None,
+                key_path: None,
+                group_id: None,
+                credential_id: None,
+                proxy_type: None,
+                proxy_host: None,
+                proxy_port: None,
+                proxy_jump_id: None,
+                init_command: None,
+                init_path: None,
+                timeout_ms: None,
+                heartbeat_ms: None,
+                remark: None,
+            },
+        )
+        .expect("params");
+
+        assert_eq!(params.password.as_deref(), Some("old-secret"));
     }
 }

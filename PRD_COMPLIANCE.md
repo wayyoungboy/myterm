@@ -17,10 +17,10 @@ MyTerm 当前的完成标准是 SSH-first：SSH 连接、终端、SFTP、服务�
 | 密钥认证 | ✅ | `userauth_pubkey_file` |
 | ssh-agent / 默认密钥 | ✅ | 密钥路径留空时尝试 agent 和默认私钥 |
 | 交互式认证入口 | ✅ | 表单入口已恢复 |
-| 连接测试 | ✅ | `test_connection` |
+| 连接测试 | ✅ | `test_connection`；编辑已有连接时复用保存密码并解析 ProxyJump |
 | 延迟检测 | ✅ | TCP ping |
 | Keepalive 心跳 | ✅ | libssh2 keepalive 按 `heartbeat_ms` 配置，后端限制为 1s-10min |
-| 硬件信息采集 | ✅ | 连接中心可采集 OS/CPU/内存/磁盘 |
+| 硬件信息采集 | ✅ | 连接中心可采集 OS/CPU/内存/磁盘，复用保存凭据和跳板链路 |
 | 导入导出 | ✅ | JSON 导入导出命令已接入 |
 | ProxyJump | ✅ | Unix-like 平台通过 SSH direct-tcpip 桥接；递归解析跳板连接并检测循环 |
 | HTTP/SOCKS 出站代理 | ✅ | HTTP CONNECT 和 SOCKS5 已接入连接测试、终端、SFTP/Monitor 辅助 SSH 会话 |
@@ -124,6 +124,6 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'ech
 
 - TypeScript/Vite build 通过。
 - Rust check 通过且无 warning。
-- Rust 单元测试通过，当前覆盖 24 个测试。
+- Rust 单元测试通过，当前覆盖 25 个测试。
 - 真实 SSH 测试服务器连接通过。
 - macOS arm64 `.app` 和 DMG 产物已生成；Windows MSI / Linux DEB 尚未在对应平台验证。

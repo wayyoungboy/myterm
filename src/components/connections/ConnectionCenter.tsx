@@ -203,13 +203,24 @@ export function ConnectionCenter() {
         if (result.success) {
           try {
             const info = await collectServerInfo({
+              id: conn.id,
+              group_id: conn.group_id || undefined,
               name: conn.name,
               host: conn.host,
               port: conn.port,
               auth_type: conn.auth_type,
               username: conn.username || undefined,
-              password: undefined, // Can't decrypt here, so skip info collection
               key_path: conn.key_path || undefined,
+              credential_id: conn.credential_id || undefined,
+              proxy_type: conn.proxy_type || undefined,
+              proxy_host: conn.proxy_host || undefined,
+              proxy_port: conn.proxy_port || undefined,
+              proxy_jump_id: conn.proxy_jump_id || undefined,
+              init_command: conn.init_command || undefined,
+              init_path: conn.init_path || undefined,
+              timeout_ms: conn.timeout_ms || undefined,
+              heartbeat_ms: conn.heartbeat_ms || undefined,
+              remark: conn.remark || undefined,
             });
             setServerInfos((prev) => ({ ...prev, [conn.id]: info }));
           } catch {
@@ -348,6 +359,7 @@ export function ConnectionCenter() {
           connectionId={editConn?.id}
           hasExistingPassword={editConn?.has_password}
           initialData={editConn ? {
+            id: editConn.id,
             group_id: editConn.group_id || undefined,
             name: editConn.name,
             host: editConn.host,
