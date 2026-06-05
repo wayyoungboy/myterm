@@ -1,22 +1,32 @@
+<div align="center">
+
 # MyTerm
 
-MyTerm is a Tauri + React desktop SSH manager with XTerminal-inspired workflows. The current stable product path is SSH-first:
+**A Tauri desktop SSH manager for terminal tabs, SFTP, host monitoring, and proxy workflows.**
 
-- SSH connection management.
-- SSH terminal tabs.
-- SFTP file management launched from an active terminal tab, using independent SSH sessions for blocking file operations.
-- Server monitoring launched from an active terminal tab, using independent SSH sessions for monitor collection.
-- SSH authentication with password, explicit private key path, ssh-agent, or default private keys such as `~/.ssh/id_ed25519` and `~/.ssh/id_rsa`.
-- SSH outbound proxy support for HTTP CONNECT and SOCKS5.
-- SSH ProxyJump on Unix-like platforms through an SSH `direct-tcpip` tunnel.
+[![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white)](#stack)
+[![React](https://img.shields.io/badge/React-19-20232A?style=flat-square&logo=react&logoColor=61DAFB)](#stack)
+[![Rust](https://img.shields.io/badge/Rust-desktop-000000?style=flat-square&logo=rust&logoColor=white)](#stack)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Vite-3178C6?style=flat-square&logo=typescript&logoColor=white)](#stack)
 
-Additional tool views are available in the app shell:
+</div>
 
-- Notes, settings, quick commands, import/export, and local terminal utilities.
-- AI conversation storage with a placeholder response until a real model provider is wired.
-- Telnet, RDP launcher, and port forwarding commands exist but still need deeper product validation before they should be treated as complete.
+![MyTerm showcase](docs/assets/showcase.svg)
 
-Cloud sync is not implemented.
+MyTerm is an SSH-first desktop operations workspace inspired by XTerminal. It focuses on the daily loop of connecting to servers, opening terminal tabs, moving files, checking host state, and routing through proxies without turning the app into a cloud sync product.
+
+## Core Workflows
+
+| Workflow | Status | Notes |
+|---|---|---|
+| SSH connection manager | Stable path | Password, explicit private key path, ssh-agent, and default private keys. |
+| Terminal tabs | Stable path | xterm.js terminal sessions inside a Tauri desktop shell. |
+| SFTP from terminal | Stable path | File operations launch independent SSH sessions for blocking work. |
+| Host monitoring | Stable path | Monitoring launched from an active terminal tab with separate SSH collection. |
+| Outbound proxy | Stable path | HTTP CONNECT, SOCKS5, and ProxyJump through SSH `direct-tcpip`. |
+| Extra tool views | Experimental | Notes, quick commands, import/export, local terminal, Telnet, RDP launcher, port forwarding. |
+
+Cloud sync is intentionally not implemented.
 
 ## Stack
 
