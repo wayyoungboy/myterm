@@ -26,6 +26,8 @@ MyTerm is an SSH-first desktop operations workspace inspired by XTerminal. It fo
 | Outbound proxy | Stable path | HTTP CONNECT, SOCKS5, and ProxyJump through SSH `direct-tcpip`. |
 | Extra tool views | Experimental | Notes, quick commands, import/export, local terminal, Telnet, RDP launcher, port forwarding. |
 
+> **End users:** prefer **[waytty](https://github.com/wayyoungboy/waytty)** (polished SSH client with releases). **MyTerm** is the earlier Tauri+React dev/workspace codebase; keep it if you need to hack on that stack.
+
 Cloud sync is intentionally not implemented.
 
 ## Stack
@@ -99,10 +101,14 @@ npm run tauri -- build
 
 In this automation environment the standard DMG bundler can fail when Finder AppleScript times out. The release binary and `.app` are still produced under `src-tauri/target/release`. A verified fallback is to clean stale `rw.*.dmg` files and run the generated `bundle_dmg.sh` with `--skip-jenkins`; the resulting DMG is written to `src-tauri/target/release/bundle/dmg/`.
 
-Real SSH connectivity smoke test:
+Optional real SSH connectivity smoke test (use **your own** host; do not commit live IPs, passwords, or keys):
 
 ```bash
-ssh -o BatchMode=yes -o ConnectTimeout=10 -p 17244 wayserver@103.112.184.13 'echo MYTERM_SSH_OK && uname -a && pwd'
+ssh -o BatchMode=yes -o ConnectTimeout=10 -p <port> <user>@<host> 'echo MYTERM_SSH_OK && uname -a && pwd'
 ```
 
-The test server is for runtime validation only. Do not commit passwords, private keys, or generated local connection databases.
+Do not commit passwords, private keys, generated local connection databases, or real probe host addresses.
+
+## License
+
+[MIT](LICENSE)
